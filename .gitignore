@@ -1,0 +1,13 @@
+node_modules/
+.env
+test-results/
+playwright-report/
+explorer/exploration-log.json
+explorer/exploration-findings.json
+explorer/debug-shots/
+# Raw codegen recordings capture literal credentials typed during recording.
+explorer/raw-*.spec.js
+# Saved browser session/auth state — contains live session cookies.
+explorer/*.auth-state.json
+explorer/last-replay-steps.debug.json
+explorer/dump-widgets-final.png

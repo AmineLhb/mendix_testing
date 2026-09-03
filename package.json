@@ -1,0 +1,35 @@
+{
+  "name": "mendix-test-agent",
+  "version": "0.1.0",
+  "description": "Record-once, AI-enrich, regress-forever E2E testing for Mendix apps",
+  "type": "module",
+  "scripts": {
+    "record": "playwright codegen",
+    "enrich": "node explorer/enrich.js",
+    "explore": "node explorer/autonomous-agent.js",
+    "test": "playwright test generated-tests",
+    "test:ci": "npx playwright test --reporter=html",
+    "validate:generated": "node ./scripts/validate-generated-tests.js",
+    "lint": "eslint . || true",
+    "format": "prettier --write .",
+    "prepare": "husky install",
+    "record-and-enrich": "node ./scripts/record-and-enrich.js"
+  },
+  "bin": {},
+  "dependencies": {
+    "openai": "^4.68.0",
+    "dotenv": "^16.1.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "eslint": "^8.44.0",
+    "husky": "^8.0.0",
+    "lint-staged": "^14.0.0"
+  }
+  ,
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix"
+    ]
+  }
+}
