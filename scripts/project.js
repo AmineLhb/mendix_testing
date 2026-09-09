@@ -151,6 +151,152 @@ export function projectRoleCounts(explicit) {
   return counts;
 }
 
+// ---- Tags ----
+//
+// Playwright tags (test.describe/test's { tag: '@x' } option) aren't
+// tracked anywhere separately — they live directly in each spec file, same
+// as everything else about a generated test. This just scans for them so
+// the UI can offer "run by tag" against whatever tags actually exist,
+// rather than a hardcoded list that could drift from the real specs.
+
+// Scoped to actual `tag: ...` expressions (Playwright's test.describe/test
+// tag option), not just any "@word" in the file — a naive whole-file scan
+// also matches things like `from '@playwright/test'`, which isn't a tag.
+const TAG_EXPR_RE = /\btags?:\s*(\[[^\]]*\]|'[^']*'|"[^"]*"|`[^`]*`)/g;
+const TAG_WORD_RE = /@[a-zA-Z][\w-]*/g;
+
+export function projectTags(explicit) {
+  const { generatedTests } = projectPaths(explicit);
+  if (!fs.existsSync(generatedTests)) return [];
+  const tags = new Set();
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name.endsWith(".spec.js")) {
+        const text = fs.readFileSync(full, "utf-8");
+        for (const exprMatch of text.matchAll(TAG_EXPR_RE)) {
+          for (const wordMatch of exprMatch[1].matchAll(TAG_WORD_RE)) tags.add(wordMatch[0]);
+        }
+      }
+    }
+  };
+  walk(generatedTests);
+  return [...tags].sort((a, b) => a.localeCompare(b));
+}
+
+// ---- Pending proposals (human review before a test is written for real) ----
+//
+// Two kinds of change go through here rather than straight to
+// generated-tests/: a brand-new AI-generated test ("new-test", written by
+// scripts/record-and-enrich.js when called with --stage) and a proposed
+// locator fix for an existing test ("fix", written by scripts/heal.js).
+// Both are just a proposed spec.js sitting in
+// projects/<name>/explorer/pending/<id>/ until a human approves it via the
+// UI — nothing lands in generated-tests/, and nothing runs as part of the
+// regression suite, until that happens.
+
+function pendingRoot(explicit) {
+  return path.join(projectPaths(explicit).explorer, "pending");
+}
+
+const PENDING_ID_RE = /^[a-z0-9-]+$/;
+
+export function listPending(explicit) {
+  const root = pendingRoot(explicit);
+  if (!fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => {
+      const metaPath = path.join(root, e.name, "meta.json");
+      if (!fs.existsSync(metaPath)) return null;
+      try {
+        return { id: e.name, ...JSON.parse(fs.readFileSync(metaPath, "utf-8")) };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+/** Writes (or overwrites) one pending proposal. `previousText` is the
+ * "before" side for a diff — for a brand-new test that's usually left
+ * unset (the raw recording already on disk serves that purpose, see
+ * readPending below); for a fix it's the current generated-tests content. */
+export function writePending(explicit, id, { type, role, flowName, specText, featureText, previousText, ...extra }) {
+  if (!PENDING_ID_RE.test(id)) throw new Error(`Invalid pending id "${id}".`);
+  const dir = path.join(pendingRoot(explicit), id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "spec.js"), specText);
+  if (featureText) fs.writeFileSync(path.join(dir, "spec.feature"), featureText);
+  if (previousText != null) fs.writeFileSync(path.join(dir, "previous.spec.js"), previousText);
+  fs.writeFileSync(
+    path.join(dir, "meta.json"),
+    JSON.stringify({ type, role, flowName, createdAt: Date.now(), ...extra }, null, 2)
+  );
+  return dir;
+}
+
+/** Full detail for one pending item, including both sides of the diff:
+ * `before` is the raw recording for a new-test proposal, or the current
+ * generated-tests content for a fix proposal; `proposed` is what would be
+ * written if approved. */
+export function readPending(explicit, id) {
+  if (!PENDING_ID_RE.test(id)) return null;
+  const dir = path.join(pendingRoot(explicit), id);
+  const metaPath = path.join(dir, "meta.json");
+  if (!fs.existsSync(metaPath)) return null;
+
+  const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+  const proposed = fs.readFileSync(path.join(dir, "spec.js"), "utf-8");
+  const featurePath = path.join(dir, "spec.feature");
+  const feature = fs.existsSync(featurePath) ? fs.readFileSync(featurePath, "utf-8") : null;
+
+  let before = null;
+  const previousPath = path.join(dir, "previous.spec.js");
+  if (fs.existsSync(previousPath)) {
+    before = fs.readFileSync(previousPath, "utf-8");
+  } else if (meta.type === "new-test") {
+    const rawPath = path.join(projectPaths(explicit).explorer, `raw-${meta.role}-${meta.flowName}.spec.js`);
+    before = fs.existsSync(rawPath) ? fs.readFileSync(rawPath, "utf-8") : null;
+  }
+
+  return { id, meta, before, proposed, feature, dir };
+}
+
+/** Moves a pending proposal into generated-tests/ for real. Returns the
+ * file paths written, so the caller can roll back if post-write validation
+ * (the hardcoded-secret check) fails. Does NOT run that validation itself —
+ * see ui/server.js's approve route, which runs it and rolls back on
+ * failure; kept separate so this function has no child-process dependency. */
+export function approvePending(explicit, id) {
+  const item = readPending(explicit, id);
+  if (!item) throw new Error(`Pending item "${id}" not found.`);
+
+  const { generatedTests } = projectPaths(explicit);
+  const outDir = path.join(generatedTests, item.meta.role);
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const specPath = path.join(outDir, `${item.meta.flowName}.spec.js`);
+  fs.writeFileSync(specPath, item.proposed);
+
+  let featurePath = null;
+  if (item.feature) {
+    featurePath = path.join(outDir, `${item.meta.flowName}.feature`);
+    fs.writeFileSync(featurePath, item.feature);
+  }
+
+  fs.rmSync(item.dir, { recursive: true, force: true });
+  return { specPath, featurePath };
+}
+
+export function rejectPending(explicit, id) {
+  if (!PENDING_ID_RE.test(id)) throw new Error(`Invalid pending id "${id}".`);
+  fs.rmSync(path.join(pendingRoot(explicit), id), { recursive: true, force: true });
+}
+
 // ---- Run history (record + run jobs started from the UI) ----
 //
 // Kept as a small JSON file per project, not in ui/jobs.js's in-memory job

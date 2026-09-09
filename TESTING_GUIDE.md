@@ -6,13 +6,16 @@ test, then run the full regression suite. For the "why" behind each piece,
 see [README.md](README.md).
 
 **Prefer clicking over typing?** `npm run ui` opens a browser UI with
-buttons for all of this — project picker, record, run, cancel a running
-job, add a role on the fly, a "recent runs" history, a source viewer for
-any generated `.spec.js`/`.feature` pair, an in-page `.env` editor, and
-rename/delete per project — see the "UI" section in
-[README.md](README.md#ui). Everything below is the same workflow via the
-CLI directly; useful when you want more control, or for CI, which always
-uses the CLI.
+buttons for all of this — project picker, record, run (by role, file, or
+tag), cancel a running job, add a role on the fly, self-heal a broken
+locator, a "recent runs" history, a source viewer for any generated
+`.spec.js`/`.feature` pair, an in-page `.env` editor, and rename/delete
+per project — see the "UI" section in [README.md](README.md#ui).
+Recording through the UI always goes through the [pending-review
+queue](#reviewing-an-ai-generated-test-before-it-counts) below rather
+than writing straight to `generated-tests/`. Everything below is the
+same workflow via the CLI directly; useful when you want more control,
+or for CI, which always uses the CLI.
 
 Tests are organized per project, per app role:
 `projects/<project>/generated-tests/<role>/<flow-name>.spec.js`. Replace
@@ -45,6 +48,12 @@ Groq has retired/renamed the model this project points at. Check
 `https://api.groq.com/openai/v1/models` (with your key) for current
 options and update the `model:` line in `explorer/enrich.js` and
 `explorer/autonomous-agent.js`.
+
+If it fails with `401 Invalid API Key` instead, the key itself is the
+problem (expired/revoked/never valid) — rotate it in the Groq console and
+update the root `.env`. This affects every AI-dependent feature at once
+(`enrich`, `explore`, the AI failure reporter, self-healing), not just
+whichever command you happened to run first.
 
 ## 1. Record + enrich in one command (recommended)
 
@@ -97,6 +106,45 @@ The rest of this section (steps 1b-4 below) breaks down what that one
 command does — useful if you want to preview the enriched output with
 `--dry-run` before writing it, or if the combined command fails partway
 and you need to resume from wherever it stopped.
+
+This CLI form writes straight to `generated-tests/` (after the confirm
+prompt above). The UI's Record button does the same record → enrich
+pipeline but with `--stage` instead, which changes step 2: nothing is
+written to `generated-tests/` at all — see the next section.
+
+## Reviewing an AI-generated test before it counts
+
+Pass `--stage` to `new-test`/`record-and-enrich.js` (what the UI's Record
+button always does) and the enriched output lands in
+`projects/<project>/explorer/pending/<role>-<flow-name>/` instead of
+`generated-tests/` — nothing is picked up by the regression suite, and
+the secret-leak validator doesn't even run yet, until a human approves
+it:
+
+```bash
+npm run new-test -- <role> <flow-name> --stage
+```
+
+In the UI, any pending item shows up in the **Pending review** panel on
+the project dashboard — a before/after diff (the raw recording vs. the
+AI-enriched output) plus three actions:
+
+- **Approve** — runs the secret-leak check (`scripts/check-secrets.js`)
+  against the proposed content *before* writing anything; only on a clean
+  check does it move into `generated-tests/<role>/<flow-name>.spec.js`
+  (+ the `.feature` doc) for real. A proposal that fails the check is
+  refused and stays in the queue — nothing partial ever lands in
+  `generated-tests/`.
+- **Reject** — discards the proposal. The raw recording is left alone
+  (still on disk, gitignored) in case you want to try `--stage` again by
+  hand later.
+- **Regenerate** — re-runs the enrich step against the *same* raw
+  recording without re-recording, useful if the first AI pass looked off
+  and you just want another attempt.
+
+The same review queue is also where a [self-healing fix](#self-healing-a-broken-locator)
+proposal shows up — approving one patches the existing test in place
+instead of creating a new file.
 
 ## 1b. Record your manual test (manual, step-by-step)
 
@@ -294,6 +342,70 @@ limit](README.md#known-issue-local-studio-pro-license-seat-limit) often
 means testing role-by-role instead of the whole suite at once — you still
 get a report for whichever role you just ran.
 
+## AI failure analysis
+
+Every failed test automatically gets a plain-English diagnosis printed
+alongside the usual Playwright error (`scripts/ai-failure-reporter.js`, a
+custom Playwright reporter wired into `playwright.config.js`) — no
+separate command, it's just part of `npm test`/`npx playwright test`/CI
+output:
+
+```text
+AI Failure Analysis
+What happened
+  The test tried to fill in the email field but it never appeared.
+
+Likely cause
+  The widget this locator targets may have been renamed or removed in
+  Studio Pro since this test was last enriched.
+
+Recommended action
+  Re-record this step, or use self-healing (see below) if you know the
+  widget's old name.
+
+Confidence: 78%
+```
+
+It's a value-add on top of the real error, never a replacement — the
+actual Playwright error/screenshot/HTML report are unchanged. Silently
+prints nothing extra if `GROQ_API_KEY` isn't set or the Groq call fails,
+so a missing key or an outage never breaks the actual test run.
+
+## Self-healing a broken locator
+
+When a test starts failing because a widget got renamed or moved (not a
+real app bug), `scripts/heal.js` can propose a fix — grounded in a real
+replay of the app right now, the same principle every locator in this
+project is built on, **never** a guessed rename:
+
+```bash
+node scripts/heal.js <role> <flow-name> <old-widget-name> --project <project>
+```
+
+or the UI's **Self-heal a broken locator** panel (role + test file + the
+failing widget's bare name, e.g. `Input_Email`). What it does:
+
+1. Replays that test's *original raw recording* (still on disk at
+   `explorer/raw-<role>-<flow-name>.spec.js` — kept after enrichment for
+   exactly this) against the app **right now**, using the same
+   replay-and-snapshot mechanism `enrich.js` uses for generation
+   (`scripts/replay-widgets.js`, shared by both).
+2. Asks the model to pick the most likely replacement **only from
+   widgets that genuinely exist in that live snapshot** — it's explicitly
+   told not to invent one, and to say so honestly (low confidence) rather
+   than guess if nothing matches.
+3. Writes a "fix" proposal to the same [pending review
+   queue](#reviewing-an-ai-generated-test-before-it-counts) as a new
+   test — a before/after diff plus the old→new widget names, confidence,
+   and reasoning. Nothing is ever applied automatically; approving it
+   patches the existing `generated-tests/<role>/<flow-name>.spec.js` in
+   place.
+
+Requires the original raw recording to still exist — a hand-authored
+test (like this project's `login.spec.js` files, which were written
+directly rather than recorded) has nothing to replay, so healing isn't
+available for those; re-recording the flow is the fallback.
+
 ## Quick reference
 
 | Step | Command |
@@ -310,6 +422,9 @@ get a report for whichever role you just ran.
 | Create a new project | Use the UI's "Test a new project" button, or `node -e "import('./scripts/project.js').then(m => m.createProject('Name'))"` |
 | Add a role to a project | Use the UI's "+ role" control, or `node -e "import('./scripts/project.js').then(m => m.addProjectRole('Project', 'role'))"` |
 | Run only the fast smoke tests (logins, tagged `@smoke`) | `npm run test:smoke` |
+| Run tests by any tag | `npx playwright test --grep @tagname` (or the UI's "By tag" run scope) |
+| Record without writing to `generated-tests/` yet (needs review) | `npm run new-test -- <role> <flow-name> --stage` (what the UI's Record button always does) |
+| Propose a fix for a broken locator | `node scripts/heal.js <role> <flow-name> <old-widget-name>` (or the UI's "Self-heal a broken locator" panel) |
 | Check for missing/incomplete `.env` vars across all projects | `npm run validate:env` |
 | Open the UI | `npm run ui` |
 

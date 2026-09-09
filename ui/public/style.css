@@ -729,6 +729,54 @@ select:focus {
   line-height: 1.5;
 }
 
+/* ---- Pending review ---- */
+
+.pending-item {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-top: 0.75rem;
+}
+
+.pending-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.pending-title {
+  font-weight: 700;
+  flex: 1;
+}
+
+.pending-type-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--purple-dark);
+  color: #fff;
+}
+
+.pending-type-badge.fix {
+  background: var(--amber-dark);
+}
+
+.pending-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+
+.pending-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 /* ---- Recent runs ---- */
 
 .history-list {

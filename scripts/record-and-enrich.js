@@ -5,15 +5,22 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { loadProjectEnv, projectPaths, projectExists, readProjectRoles } from './project.js';
 
-// Usage: node scripts/record-and-enrich.js <role> <flow-name> [app-url] [--project <name>] [--save-storage <path>] [--force]
+// Usage: node scripts/record-and-enrich.js <role> <flow-name> [app-url] [--project <name>] [--save-storage <path>] [--force] [--stage]
 //
 // app-url defaults to BASE_URL from the active project's .env, and project
 // defaults to DEFAULT_PROJECT (scripts/project.js), so day-to-day usage is
 // just:
 //   npm run new-test -- collaborateur edit-visit
+//
+// --stage writes the enriched test to projects/<name>/explorer/pending/
+// instead of straight to generated-tests/, for review in the UI before it
+// becomes a real, running test (validation + the interactive overwrite
+// confirmation both happen at approve time instead, since nothing real is
+// being touched yet). This is what the UI's Record button uses; the CLI
+// default (no --stage) keeps writing directly, unchanged.
 const argv = process.argv.slice(2);
 if (argv.length < 2) {
-  console.error('Usage: node scripts/record-and-enrich.js <role> <flow-name> [app-url] [--project <name>] [--save-storage <path>] [--force]');
+  console.error('Usage: node scripts/record-and-enrich.js <role> <flow-name> [app-url] [--project <name>] [--save-storage <path>] [--force] [--stage]');
   console.error('app-url defaults to BASE_URL from the active project\'s .env if omitted.');
   process.exit(1);
 }
@@ -21,6 +28,10 @@ if (argv.length < 2) {
 const forceIdx = argv.indexOf('--force');
 if (forceIdx > -1) argv.splice(forceIdx, 1);
 const force = forceIdx > -1;
+
+const stageIdx = argv.indexOf('--stage');
+if (stageIdx > -1) argv.splice(stageIdx, 1);
+const stage = stageIdx > -1;
 
 const projectIdx = argv.indexOf('--project');
 const projectName = projectIdx > -1 ? argv[projectIdx + 1] : undefined;
@@ -63,10 +74,13 @@ if (!appUrl) {
 // two different roles (e.g. "validate-visit" for both medecin and infirmier)
 // doesn't collide on disk.
 const rawPath = path.join(paths.explorer, `raw-${role}-${flowName}.spec.js`);
-const outPath = path.join(paths.generatedTests, role, `${flowName}.spec.js`);
+const pendingId = `${role}-${flowName}`;
+const outPath = stage
+  ? path.join(paths.explorer, 'pending', pendingId, 'spec.js')
+  : path.join(paths.generatedTests, role, `${flowName}.spec.js`);
 
 async function confirmOverwrite() {
-  if (force || !fs.existsSync(outPath)) return;
+  if (stage || force || !fs.existsSync(outPath)) return;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const answer = await rl.question(
     `${outPath} already exists and will be overwritten once enrich finishes. Continue? (y/N) `
@@ -134,9 +148,22 @@ async function validate() {
       throw new Error(`Raw recording not found at ${rawPath}`);
     }
     await runEnrich();
-    await validate();
-    console.log('Record -> Enrich -> Validate complete. Review generated test at', outPath);
-    console.log(`It is picked up automatically next time you run tests for the "${paths.name}" project.`);
+
+    if (stage) {
+      // meta.json alongside the spec.js/spec.feature enrich.js already wrote
+      // to the pending dir — writePending() would rewrite spec.js too, so
+      // just write the metadata file directly instead of re-deriving it.
+      fs.writeFileSync(
+        path.join(paths.explorer, 'pending', pendingId, 'meta.json'),
+        JSON.stringify({ type: 'new-test', role, flowName, createdAt: Date.now() }, null, 2)
+      );
+      console.log(`Staged for review: projects/${paths.name}/explorer/pending/${pendingId}/`);
+      console.log('Review and approve it in the UI before it becomes a real test.');
+    } else {
+      await validate();
+      console.log('Record -> Enrich -> Validate complete. Review generated test at', outPath);
+      console.log(`It is picked up automatically next time you run tests for the "${paths.name}" project.`);
+    }
   } catch (err) {
     console.error(err.message || err);
     process.exit(1);

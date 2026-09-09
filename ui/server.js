@@ -22,11 +22,22 @@ import {
   readProjectRoles,
   addProjectRole,
   removeProjectRole,
+  projectTags,
+  listPending,
+  readPending,
+  approvePending,
+  rejectPending,
   readHistory,
   appendHistory,
   DEFAULT_PROJECT,
 } from "../scripts/project.js";
+import { checkTextForSecrets } from "../scripts/check-secrets.js";
 import { startJob, getJob, cancelJob, pruneOldJobs } from "./jobs.js";
+
+// Tags come from the UI as free text (the "By tag" run option), so unlike
+// role/file params — which are checked against a known list — this has to
+// be validated by shape alone before it's ever used as a CLI arg.
+const TAG_RE = /^@[a-zA-Z][\w-]*$/;
 
 // Flow names are already restricted to this pattern at record time
 // (scripts/record-and-enrich.js), so a spec file's basename can never
@@ -185,6 +196,12 @@ app.post("/api/projects/:name/env", (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/projects/:name/tags", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json({ tags: projectTags(name) });
+});
+
 // ---- Run history ----
 
 app.get("/api/projects/:name/history", (req, res) => {
@@ -196,7 +213,7 @@ app.get("/api/projects/:name/history", (req, res) => {
 // ---- Run tests ----
 
 app.post("/api/run", (req, res) => {
-  const { project, scope, role, file } = req.body || {};
+  const { project, scope, role, file, tag } = req.body || {};
   if (!projectExists(project)) return res.status(400).json({ error: "Unknown project." });
 
   // Playwright's positional CLI arg is a SUBSTRING pattern matched against
@@ -214,16 +231,25 @@ app.post("/api/run", (req, res) => {
   } else if (scope === "file" && role && file) {
     args.push(`${role}/${file}`);
     label = file;
+  } else if (scope === "tag" && tag) {
+    if (!TAG_RE.test(tag)) return res.status(400).json({ error: "Invalid tag." });
+    args.push("--grep", tag);
+    label = `tag "${tag}"`;
   }
 
   const jobId = startJob("npx", args, {
     env: { ...process.env, MENDIX_PROJECT: project },
   });
-  recordHistoryOnFinish(jobId, { type: "run", project, scope, role, file, label });
+  recordHistoryOnFinish(jobId, { type: "run", project, scope, role, file, tag, label });
   res.json({ jobId, label });
 });
 
 // ---- Record + enrich a new test ----
+//
+// --stage instead of --force: the UI never writes straight to
+// generated-tests/ — every recording lands in the pending/ review queue
+// below first (see project.js's pending-proposal functions), and only
+// becomes a real test once approved.
 
 app.post("/api/record", (req, res) => {
   const { project, role, flowName } = req.body || {};
@@ -235,10 +261,126 @@ app.post("/api/record", (req, res) => {
 
   const jobId = startJob(
     "node",
-    ["scripts/record-and-enrich.js", role, flowName, "--project", project, "--force"],
+    ["scripts/record-and-enrich.js", role, flowName, "--project", project, "--stage"],
     { env: process.env }
   );
   recordHistoryOnFinish(jobId, { type: "record", project, role, label: `${role}/${flowName}` });
+  res.json({ jobId });
+});
+
+// ---- Self-heal a broken locator ----
+//
+// Same "grounded in a real replay, never guessed" principle as everywhere
+// else — see scripts/heal.js's own header comment. Writes a "fix" proposal
+// to the same pending review queue as a new recording; nothing is ever
+// applied to a real test without approval.
+
+const WIDGET_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+app.post("/api/projects/:name/heal", (req, res) => {
+  const { name } = req.params;
+  const { role, flowName, oldWidget } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  if (!role || !readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  if (!flowName || !/^[a-z0-9-]+$/.test(flowName)) {
+    return res.status(400).json({ error: "Flow name must be lowercase letters, digits, and hyphens only." });
+  }
+  if (!oldWidget || !WIDGET_NAME_RE.test(oldWidget)) {
+    return res.status(400).json({ error: "Widget name must start with a letter and contain only letters, digits, and underscores." });
+  }
+
+  const jobId = startJob("node", ["scripts/heal.js", role, flowName, oldWidget, "--project", name], {
+    env: process.env,
+  });
+  res.json({ jobId });
+});
+
+// ---- Pending proposals (human review before a test is written for real) ----
+
+app.get("/api/projects/:name/pending", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json({ pending: listPending(name) });
+});
+
+app.get("/api/projects/:name/pending/:id", (req, res) => {
+  const { name, id } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const item = readPending(name, id);
+  if (!item) return res.status(404).json({ error: "Pending item not found." });
+  res.json({ id: item.id, meta: item.meta, before: item.before, proposed: item.proposed, feature: item.feature });
+});
+
+app.post("/api/projects/:name/pending/:id/approve", (req, res) => {
+  const { name, id } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const item = readPending(name, id);
+  if (!item) return res.status(404).json({ error: "Pending item not found." });
+
+  // Checked BEFORE anything is written — a proposal that fails this never
+  // touches generated-tests/ at all, rather than being written then rolled
+  // back (see scripts/check-secrets.js, shared with the same check
+  // pre-commit/CI run against files already on disk).
+  const problems = checkTextForSecrets(item.proposed);
+  if (problems.length) {
+    return res.status(400).json({
+      error: "Refusing to approve: possible hardcoded secret in the proposed test.",
+      problems,
+    });
+  }
+
+  try {
+    const { specPath, featurePath } = approvePending(name, id);
+    res.json({ ok: true, specPath, featurePath });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/projects/:name/pending/:id/reject", (req, res) => {
+  const { name, id } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  try {
+    rejectPending(name, id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/projects/:name/pending/:id/regenerate", (req, res) => {
+  const { name, id } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const item = readPending(name, id);
+  if (!item) return res.status(404).json({ error: "Pending item not found." });
+  if (item.meta.type !== "new-test") {
+    return res.status(400).json({ error: "Only a new-test proposal can be regenerated." });
+  }
+
+  const { role, flowName } = item.meta;
+  const { explorer, env } = projectPaths(name);
+  const rawPath = path.join(explorer, `raw-${role}-${flowName}.spec.js`);
+  if (!fs.existsSync(rawPath)) {
+    return res.status(400).json({ error: `Original raw recording not found at ${rawPath} — can't regenerate without it.` });
+  }
+  // Read straight from the project's .env rather than process.env — this
+  // server process never loads any one project's env (each spawned job
+  // does that itself via loadProjectEnv()), so process.env.BASE_URL here
+  // would be whatever happened to be set when `npm run ui` itself started,
+  // not necessarily this project's value.
+  const envText = fs.existsSync(env) ? fs.readFileSync(env, "utf-8") : "";
+  const baseUrlMatch = envText.match(/^BASE_URL=(.*)$/m);
+  const baseUrl = baseUrlMatch?.[1]?.trim();
+  if (!baseUrl) {
+    return res.status(400).json({ error: `BASE_URL not set in ${env}.` });
+  }
+  const outPath = path.join(explorer, "pending", id, "spec.js");
+
+  const jobId = startJob(
+    "node",
+    ["explorer/enrich.js", rawPath, baseUrl, outPath, "--role", role, "--project", name],
+    { env: process.env }
+  );
   res.json({ jobId });
 });
 

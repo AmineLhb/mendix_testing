@@ -47,6 +47,11 @@ export default defineConfig({
     ["list"],
     ["html", { open: "never", outputFolder: paths.playwrightReport }],
     ["junit", { outputFile: path.join(paths.testResults, "junit.xml") }],
+    // Prints a plain-English diagnosis under any failed test, using the same
+    // Groq call as enrich.js — no-ops (prints nothing extra) if GROQ_API_KEY
+    // isn't set or the call fails, so a missing key/outage never breaks the
+    // actual test run. See scripts/ai-failure-reporter.js.
+    ["./scripts/ai-failure-reporter.js"],
   ],
   use: {
     baseURL: process.env.BASE_URL || "http://localhost:8080",

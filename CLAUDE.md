@@ -40,6 +40,11 @@ command sequence.
   — create a new project.
 - `node -e "import('./scripts/project.js').then(m => m.addProjectRole('Project', 'role'))"`
   — add a role to a project.
+- `npm run new-test -- <role> <flow-name> --stage` — same as above but
+  writes to the pending-review queue instead of `generated-tests/`
+  directly (what the UI's Record button always does).
+- `node scripts/heal.js <role> <flow-name> <old-widget-name>` — propose a
+  fix for a broken locator (writes to the same pending queue).
 
 ## Architecture
 
@@ -49,8 +54,9 @@ Every Mendix app under test gets `projects/<name>/`: `.env` (`BASE_URL` +
 role credentials, gitignored), `roles.json` (which roles this project
 has — a plain array, not a fixed global list), `generated-tests/<role>/*.spec.js`
 + matching `.feature` docs, `explorer/` (raw codegen recordings,
-gitignored), `playwright-report/` + `test-results/` (regenerated,
-gitignored), `run-history.json` (last 20 UI-triggered jobs, gitignored).
+gitignored) with `explorer/pending/<id>/` for proposals awaiting review,
+`playwright-report/` + `test-results/` (regenerated, gitignored),
+`run-history.json` (last 20 UI-triggered jobs, gitignored).
 `scripts/project.js` is the module every other script goes through to
 resolve paths/env for "the active project" (`MENDIX_PROJECT` env var, or
 `DEFAULT_PROJECT` = `OccupationalMedicine`). Tool-level config not tied
@@ -81,6 +87,43 @@ project is active.
    editing steps instead.
 3. **Regress**: every subsequent run (`npm test`, CI, the UI) just runs
    the generated Playwright tests normally.
+
+The UI (and `--stage`) insert a review step between 2 and 3: the enriched
+output goes to `projects/<name>/explorer/pending/<role>-<flow>/` instead
+of `generated-tests/`, and only a human approving it in the UI moves it
+across — see "AI-assisted maintenance" below.
+
+### AI-assisted maintenance (pending review, failure analysis, self-healing)
+
+Three more Groq call sites beyond initial generation, all built on the
+same rule as the pipeline above: **never guess a locator, always ground
+it in a real replay.**
+
+- **Pending review** (`scripts/project.js`'s `writePending`/`readPending`/
+  `approvePending`/`rejectPending`, `ui/server.js`'s `/api/projects/:name/pending*`
+  routes): a proposal (`type: "new-test"` or `type: "fix"`) sits in
+  `explorer/pending/<id>/` (`meta.json` + `spec.js` + optional
+  `spec.feature`/`previous.spec.js`) until approved. `approvePending()`
+  itself does the write; the server route runs
+  `scripts/check-secrets.js`'s `checkTextForSecrets()` against the
+  proposed text *first* and refuses to call it if that fails — the same
+  check `scripts/validate-generated-tests.js` runs against files already
+  on disk, factored out so both call sites can't drift apart.
+- **AI failure analysis** (`scripts/ai-failure-reporter.js`): a custom
+  Playwright reporter (wired into `playwright.config.js`'s `reporter`
+  array) that calls Groq on any failed test's `onTestEnd` and prints a
+  plain-English diagnosis. No-ops without `GROQ_API_KEY` or if the call
+  fails — purely additive, never blocks the real test run.
+- **Self-healing** (`scripts/heal.js`): replays a test's original raw
+  recording (`explorer/raw-<role>-<flow>.spec.js`, kept on disk after
+  enrichment for exactly this) against the live app via
+  `scripts/replay-widgets.js`'s `replayAndSnapshotWidgets()` — the same
+  function `explorer/enrich.js` uses for generation, extracted there so
+  neither copy can drift. The model picks a replacement only from
+  widgets actually present in that live snapshot, never an invented
+  name. Writes a `type: "fix"` pending proposal; approving it patches
+  the existing spec file's `mx('<old>')` calls in place (regex-scoped to
+  the literal string argument only, preserving any chained `.filter()`).
 
 ### Roles are per-project data, not a fixed list
 

@@ -108,6 +108,17 @@
             </div>
           </details>
 
+          <div id="pending-panel" class="panel panel-wide card-accent card-purple hidden">
+            <div class="panel-head">
+              <h2><span class="panel-icon icon-purple">&#128065;</span> Pending review</h2>
+            </div>
+            <p class="muted">
+              A new test isn't picked up by the regression suite until you approve it here —
+              recording never writes straight to <code>generated-tests/</code>.
+            </p>
+            <div id="pending-list"></div>
+          </div>
+
           <div class="card-grid">
             <div class="panel card-accent card-purple">
               <div class="panel-head">
@@ -150,6 +161,7 @@
                     <option value="all">All roles (full suite)</option>
                     <option value="role">One role</option>
                     <option value="file">One test file</option>
+                    <option value="tag">By tag</option>
                   </select>
                 </label>
                 <label id="run-role-row" class="hidden">
@@ -162,6 +174,10 @@
                     <select id="run-file"></select>
                     <button id="view-source-btn" type="button" class="btn-plain">View source</button>
                   </div>
+                </label>
+                <label id="run-tag-row" class="hidden">
+                  Tag
+                  <select id="run-tag"></select>
                 </label>
                 <button type="submit" class="btn btn-teal">Run</button>
               </form>
@@ -178,6 +194,36 @@
               <a id="report-link" href="#" target="_blank" class="btn btn-blue">Open report</a>
             </div>
           </div>
+
+          <details class="panel panel-wide details-panel">
+            <summary>
+              <span class="panel-icon icon-purple">&#129502;</span> Self-heal a broken locator
+            </summary>
+            <div class="details-body">
+              <p class="muted">
+                A locator failing because a widget got renamed in Studio Pro? Replays that
+                test's original recording against the app right now, finds what the widget's
+                current name is, and proposes a fix for review below — never applied
+                automatically. Needs the test's raw recording still on disk (kept after every
+                enrichment for exactly this).
+              </p>
+              <form id="heal-form" class="stacked-form">
+                <label>
+                  Role
+                  <select id="heal-role"></select>
+                </label>
+                <label>
+                  Test file
+                  <select id="heal-file"></select>
+                </label>
+                <label>
+                  Failing widget name (bare, e.g. <code>actionButton1</code>)
+                  <input id="heal-widget" type="text" placeholder="e.g. Input_Email" autocomplete="off" required />
+                </label>
+                <button type="submit" class="btn btn-purple">Suggest fix</button>
+              </form>
+            </div>
+          </details>
 
           <div id="source-panel" class="panel panel-wide hidden">
             <div class="panel-head source-panel-head">

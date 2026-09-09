@@ -77,6 +77,7 @@ function showProjectView(name) {
   loadRunOptions();
   loadEnv();
   loadHistory();
+  loadPending();
 }
 
 function guardNav(e) {
@@ -232,6 +233,18 @@ async function loadRunOptions() {
   const runRole = el("run-role");
   runRole.innerHTML = rolesWithTests.map((r) => `<option value="${r}">${r} (${testCounts[r]})</option>`).join("");
   await loadFileOptions();
+
+  const healRole = el("heal-role");
+  const previousHealRole = healRole.value;
+  healRole.innerHTML = rolesWithTests.map((r) => `<option value="${r}">${r} (${testCounts[r]})</option>`).join("");
+  if (rolesWithTests.includes(previousHealRole)) healRole.value = previousHealRole;
+  await loadFilesInto("heal-role", "heal-file");
+
+  const { tags } = await api(`/api/projects/${encodeURIComponent(state.project)}/tags`);
+  const runTag = el("run-tag");
+  runTag.innerHTML = tags.length
+    ? tags.map((t) => `<option value="${t}">${t}</option>`).join("")
+    : '<option value="">(no tags found in this project\'s tests)</option>';
 }
 
 // ---- Add a role (per project — projects/<name>/roles.json) ----
@@ -268,9 +281,9 @@ el("add-role-input").addEventListener("keydown", (e) => {
   }
 });
 
-async function loadFileOptions() {
-  const role = el("run-role").value;
-  const fileSelect = el("run-file");
+async function loadFilesInto(roleSelectId, fileSelectId) {
+  const role = el(roleSelectId).value;
+  const fileSelect = el(fileSelectId);
   if (!role) {
     fileSelect.innerHTML = "";
     return;
@@ -279,14 +292,20 @@ async function loadFileOptions() {
   fileSelect.innerHTML = files.map((f) => `<option value="${f}">${f}</option>`).join("");
 }
 
+function loadFileOptions() {
+  return loadFilesInto("run-role", "run-file");
+}
+
 el("run-scope").addEventListener("change", () => {
   const scope = el("run-scope").value;
-  el("run-role-row").classList.toggle("hidden", scope === "all");
+  el("run-role-row").classList.toggle("hidden", scope !== "role" && scope !== "file");
   el("run-file-row").classList.toggle("hidden", scope !== "file");
+  el("run-tag-row").classList.toggle("hidden", scope !== "tag");
   if (scope !== "file") hideSourcePanel();
 });
 
 el("run-role").addEventListener("change", loadFileOptions);
+el("heal-role").addEventListener("change", () => loadFilesInto("heal-role", "heal-file"));
 
 // ---- Source viewer ----
 
@@ -352,6 +371,131 @@ async function loadHistory() {
   }
 }
 
+// ---- Pending review: a recording (or a self-healing fix) waiting for a
+// human to approve before it becomes a real, running test ----
+
+async function loadPending() {
+  const panel = el("pending-panel");
+  const listEl = el("pending-list");
+  try {
+    const { pending } = await api(`/api/projects/${encodeURIComponent(state.project)}/pending`);
+    panel.classList.toggle("hidden", pending.length === 0);
+    if (!pending.length) return;
+    listEl.innerHTML = "";
+    for (const item of pending) listEl.appendChild(renderPendingItem(item));
+  } catch (err) {
+    panel.classList.remove("hidden");
+    listEl.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderPendingItem(summary) {
+  const node = document.createElement("div");
+  node.className = "pending-item";
+  node.dataset.id = summary.id;
+  const kind = summary.type === "fix" ? "Suggested fix" : "New test";
+  node.innerHTML = `
+    <div class="pending-item-head">
+      <span class="pending-type-badge ${summary.type === "fix" ? "fix" : ""}">${escapeHtml(kind)}</span>
+      <span class="pending-title">${escapeHtml(summary.role)} / ${escapeHtml(summary.flowName)}</span>
+      <span class="history-time">${relativeTime(summary.createdAt)}</span>
+    </div>
+    <div class="pending-meta"></div>
+    <div class="source-grid">
+      <div>
+        <div class="source-label">Before</div>
+        <pre class="code-block pending-before">Loading…</pre>
+      </div>
+      <div>
+        <div class="source-label">Proposed</div>
+        <pre class="code-block pending-after">Loading…</pre>
+      </div>
+    </div>
+    <div class="pending-actions">
+      <button type="button" class="btn btn-teal btn-sm" data-action="approve">Approve</button>
+      ${summary.type === "new-test" ? '<button type="button" class="btn-plain" data-action="regenerate">Regenerate</button>' : ""}
+      <button type="button" class="btn btn-danger btn-sm" data-action="reject">Reject</button>
+    </div>
+  `;
+
+  loadPendingDetail(summary.id, node);
+
+  node.querySelector('[data-action="approve"]').addEventListener("click", () => approvePendingItem(summary.id));
+  node.querySelector('[data-action="reject"]').addEventListener("click", () => rejectPendingItem(summary.id));
+  const regenBtn = node.querySelector('[data-action="regenerate"]');
+  if (regenBtn) regenBtn.addEventListener("click", () => regeneratePendingItem(summary.id, node));
+
+  return node;
+}
+
+async function loadPendingDetail(id, node) {
+  try {
+    const item = await api(`/api/projects/${encodeURIComponent(state.project)}/pending/${encodeURIComponent(id)}`);
+    node.querySelector(".pending-before").textContent = item.before ?? "(nothing to compare — original recording not found)";
+    node.querySelector(".pending-after").textContent = item.proposed;
+    const metaEl = node.querySelector(".pending-meta");
+    if (item.meta.type === "fix") {
+      metaEl.textContent = `${item.meta.oldWidget} → ${item.meta.newWidget} (confidence: ${item.meta.confidence}%). ${item.meta.reasoning || ""}`;
+    } else {
+      metaEl.remove();
+    }
+  } catch (err) {
+    node.querySelector(".pending-before").textContent = "";
+    node.querySelector(".pending-after").textContent = `Error: ${err.message}`;
+  }
+}
+
+async function approvePendingItem(id) {
+  if (state.currentJobId) return toast("A job is still running — cancel it first.", "error");
+  try {
+    await api(`/api/projects/${encodeURIComponent(state.project)}/pending/${encodeURIComponent(id)}/approve`, {
+      method: "POST",
+    });
+    toast("Approved — now part of the regression suite.");
+    await loadPending();
+    await loadRunOptions();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function rejectPendingItem(id) {
+  if (state.currentJobId) return toast("A job is still running — cancel it first.", "error");
+  if (!confirm("Reject this proposal? It will be discarded.")) return;
+  try {
+    await api(`/api/projects/${encodeURIComponent(state.project)}/pending/${encodeURIComponent(id)}/reject`, {
+      method: "POST",
+    });
+    toast("Rejected.");
+    await loadPending();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function regeneratePendingItem(id, node) {
+  if (state.currentJobId) return toast("A job is still running — cancel it first.", "error");
+  try {
+    const { jobId } = await api(
+      `/api/projects/${encodeURIComponent(state.project)}/pending/${encodeURIComponent(id)}/regenerate`,
+      { method: "POST" }
+    );
+    setJobRunning(true, "Regenerating…");
+    // Not shown anywhere — a detached element just so streamJob has a real
+    // DOM node to write progress into (avoids reimplementing its API with a
+    // fake object). The actual regenerated content is picked up via
+    // loadPendingDetail() once the job finishes.
+    const sink = document.createElement("pre");
+    streamJob(jobId, sink, "Regenerate", async () => {
+      await loadPendingDetail(id, node);
+      toast("Regenerated — review the updated proposal.");
+    });
+  } catch (err) {
+    toast(err.message, "error");
+    setJobRunning(false);
+  }
+}
+
 // ---- Actions: run / record, streamed to the log panel ----
 
 function resetLog() {
@@ -374,6 +518,9 @@ function setUiLocked(locked) {
   el("rename-form").querySelector("button[type=submit]").disabled = locked;
   el("delete-project-btn").disabled = locked;
   el("env-save-btn").disabled = locked;
+  el("heal-form").querySelector("button[type=submit]").disabled = locked;
+  // Rendered dynamically per pending item, so queried live rather than by id.
+  for (const btn of el("pending-list").querySelectorAll("button")) btn.disabled = locked;
 }
 
 function setJobRunning(running, label) {
@@ -437,7 +584,9 @@ el("run-form").addEventListener("submit", async (e) => {
   const scope = el("run-scope").value;
   const role = el("run-role").value;
   const file = el("run-file").value;
-  const label = scope === "file" ? file : scope === "role" ? `role "${role}"` : "all tests";
+  const tag = el("run-tag").value;
+  const label =
+    scope === "file" ? file : scope === "role" ? `role "${role}"` : scope === "tag" ? `tag "${tag}"` : "all tests";
   const button = e.target.querySelector("button[type=submit]");
   button.disabled = true;
   setJobRunning(true, "Running tests…");
@@ -446,7 +595,7 @@ el("run-form").addEventListener("submit", async (e) => {
   try {
     const { jobId } = await api("/api/run", {
       method: "POST",
-      body: JSON.stringify({ project: state.project, scope, role, file }),
+      body: JSON.stringify({ project: state.project, scope, role, file, tag }),
     });
     streamJob(jobId, logEl, label, async () => {
       button.disabled = false;
@@ -478,6 +627,38 @@ el("record-form").addEventListener("submit", async (e) => {
       button.disabled = false;
       if (exitCode === 0) el("record-flow-name").value = "";
       await loadRunOptions();
+    });
+  } catch (err) {
+    logEl.textContent += `\nError: ${err.message}`;
+    button.disabled = false;
+    setJobRunning(false);
+  }
+});
+
+el("heal-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  requestNotificationPermission();
+  const role = el("heal-role").value;
+  const file = el("heal-file").value;
+  const flowName = file.replace(/\.spec\.js$/, "");
+  const oldWidget = el("heal-widget").value.trim();
+  if (!role || !file) return toast("No test file selected — pick a role with an existing test.", "error");
+  const button = e.target.querySelector("button[type=submit]");
+  button.disabled = true;
+  setJobRunning(true, "Finding a fix…");
+  const logEl = resetLog();
+  logEl.textContent = `Replaying ${role}/${file}'s original recording against the app to find what "${oldWidget}" was renamed to…\n`;
+  try {
+    const { jobId } = await api(`/api/projects/${encodeURIComponent(state.project)}/heal`, {
+      method: "POST",
+      body: JSON.stringify({ role, flowName, oldWidget }),
+    });
+    streamJob(jobId, logEl, `heal ${role}/${file}`, async (exitCode) => {
+      button.disabled = false;
+      if (exitCode === 0) {
+        el("heal-widget").value = "";
+        await loadPending();
+      }
     });
   } catch (err) {
     logEl.textContent += `\nError: ${err.message}`;

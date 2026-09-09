@@ -19,14 +19,23 @@ Opens a browser to `http://localhost:4300` — a project picker ("open a
 recent project" or "test a new project") and, per project:
 
 - **Record** a new test (opens a real Playwright browser for you to click
-  through the flow manually) and **Run** tests (all roles, one role, or
-  one file) — both stream live output to the page, with a **Cancel**
-  button while a job is running and a desktop notification when it
-  finishes if you've tabbed away.
+  through the flow manually) and **Run** tests (all roles, one role, one
+  file, or by tag) — both stream live output to the page, with a
+  **Cancel** button while a job is running and a desktop notification
+  when it finishes if you've tabbed away.
 - **"+ role"** next to Record's role picker — add a role on the fly
   (per-project, see [Environment variables](#environment-variables)) and
   select it immediately, instead of only being able to pick from a fixed
   list.
+- **Pending review** — a recording never writes straight to
+  `generated-tests/`. It lands here first as a before/after diff (raw
+  recording vs. AI-enriched output) with Approve / Reject / Regenerate —
+  see [Reviewing an AI-generated test before it counts](TESTING_GUIDE.md#reviewing-an-ai-generated-test-before-it-counts).
+  A self-healing fix proposal (see below) shows up in the same queue.
+- **Self-heal a broken locator** — when a widget gets renamed in Studio
+  Pro, propose a fix grounded in a real replay of the app right now
+  (never a guessed rename) — see
+  [Self-healing a broken locator](TESTING_GUIDE.md#self-healing-a-broken-locator).
 - **Report** — opens the HTML report for the last run.
 - **Recent runs** — the last 20 record/run jobs for this project (pass/fail,
   what was run, when), persisted to
@@ -389,6 +398,36 @@ rather than guessed at:**
 - Pre-commit checks are already wired via Husky (`npm run prepare` sets it
   up, which `npm install` runs automatically). `.husky/pre-commit` runs the
   generated-test validator and lint-staged on every commit.
+
+## AI-assisted maintenance
+
+Beyond the initial record → enrich step, three more places use the same
+Groq call, all built on one rule this project doesn't bend on: **a
+locator is never guessed — it's always grounded in a real replay of the
+live app.** Full detail on each is in TESTING_GUIDE.md.
+
+- **[Reviewing an AI-generated test before it counts](TESTING_GUIDE.md#reviewing-an-ai-generated-test-before-it-counts)**
+  — recording through the UI (or `new-test --stage` on the CLI) never
+  writes straight to `generated-tests/`. It sits in
+  `projects/<project>/explorer/pending/` as a before/after diff until a
+  human approves it — and the secret-leak check runs *before* that write,
+  not after, so a proposal that fails it never touches
+  `generated-tests/` at all.
+- **[AI failure analysis](TESTING_GUIDE.md#ai-failure-analysis)** — every
+  failed test gets a plain-English "what happened / likely cause /
+  recommended action" diagnosis printed alongside the real Playwright
+  error, via a custom reporter (`scripts/ai-failure-reporter.js`). Purely
+  additive — the actual error/screenshot/report are unchanged, and a
+  missing key or Groq outage never breaks the test run itself.
+- **[Self-healing a broken locator](TESTING_GUIDE.md#self-healing-a-broken-locator)**
+  (`scripts/heal.js`) — when a widget gets renamed in Studio Pro, this
+  replays the test's original raw recording against the app *right now*
+  (the same replay mechanism `enrich.js` uses, shared via
+  `scripts/replay-widgets.js`) and asks the model to pick a replacement
+  only from widgets that are genuinely visible in that live snapshot,
+  never an invented name. The proposed fix goes through the same
+  pending-review queue as a new test — approving it patches the existing
+  test in place.
 
 ## Verified against the real app
 
