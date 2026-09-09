@@ -74,4 +74,90 @@ export class BasePage {
       throw new Error(`Mendix error message appeared: ${text}`);
     }
   }
+
+  /**
+   * Log out via the icon-only logout button in the top bar. Verified
+   * 2026-09-04: after clicking, the login form reappears — confirms the
+   * server-side session actually ends, not just a client-side navigation.
+   *
+   * The button's mx-name (actionButton2) is NOT unique on the list page —
+   * every row's "Modifier" (edit) button shares the same default name (the
+   * same unrenamed-widget collision seen elsewhere in this app), so
+   * mx('actionButton2') throws a strict-mode violation once any rows exist.
+   * Mendix adds an extra semantic `logout` class to this specific button
+   * though, so target that directly instead of going through mx().
+   *
+   * Call this at the end of every test that logs in. The local Studio Pro
+   * dev license caps concurrent signed-in sessions, and without an explicit
+   * logout, each test's session sits active until it times out on its own —
+   * enough test runs in a row exhausts the seat limit (see README "Known
+   * issue" section). Logging out frees the seat immediately instead.
+   */
+  async logout() {
+    await this.page.locator('.mx-name-actionButton2.logout').click();
+    await this.waitForMendixIdle();
+  }
+
+  /**
+   * Capture the actual /xas/ API response produced by a Mendix action (a
+   * click, a fill that triggers on-change, etc.), instead of only checking
+   * what rendered in the DOM afterward.
+   *
+   * Verified against the real app on 2026-09-04 (explorer/inspect-api-responses.js):
+   * every user action goes through POST /xas/, and a single click can trigger
+   * MULTIPLE /xas/ calls in sequence (e.g. login itself returns almost nothing,
+   * then a separate get_session_data call follows with the real `roles`/`user`
+   * payload). Matching on URL alone often grabs the wrong one, so `matchBody`
+   * lets you wait for the specific response you actually want by content.
+   *
+   * Usage:
+   *   const { status, body } = await basePage.captureApiResponse(
+   *     () => basePage.mx('actionButton1').click(),
+   *     { matchBody: (b) => 'roles' in b }
+   *   );
+   */
+  async captureApiResponse(triggerAction, { timeout = 15000, matchBody } = {}) {
+    const responsePromise = this.page.waitForResponse(async (res) => {
+      if (!res.url().includes('/xas/')) return false;
+      if (!matchBody) return true;
+      try {
+        return matchBody(await res.json());
+      } catch {
+        return false;
+      }
+    }, { timeout });
+
+    const [response] = await Promise.all([responsePromise, triggerAction()]);
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    return { status: response.status(), body, response };
+  }
+
+  /**
+   * Assert an /xas/ API call actually succeeded. Gives a specific, actionable
+   * message for 402 — verified on 2026-09-04 to be Mendix's status code for
+   * "the current license does not allow more users to sign in" (the local
+   * Studio Pro seat-limit issue — see README "Known issue" section) — instead
+   * of a generic failure that looks like a locator/timing bug.
+   */
+  expectApiSuccess({ status, body }) {
+    if (status === 402) {
+      throw new Error(
+        'API call failed with 402 — Mendix license seat limit reached. ' +
+          'Restart the app in Studio Pro to free active sessions (see README "Known issue" section).'
+      );
+    }
+    if (status < 200 || status >= 300) {
+      throw new Error(`API call failed with status ${status}: ${JSON.stringify(body).slice(0, 300)}`);
+    }
+  }
+
+  /** Find a persisted domain object of a given type in an /xas/ response body's `objects` array. */
+  findApiObject(body, objectType) {
+    return (body?.objects || []).find((o) => o.objectType === objectType) ?? null;
+  }
 }

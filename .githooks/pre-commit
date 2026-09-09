@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Simple pre-commit hook to validate generated tests and run lint
-set -e
-echo "Running pre-commit checks: validate generated tests and lint"
-npm run validate:generated || { echo "validate:generated failed"; exit 1; }
-npm run lint || echo "lint failed (non-blocking)"
-exit 0

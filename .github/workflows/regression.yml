@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nightly, independent of anyone pushing code — catches environment drift
+  # (a Studio Pro widget renamed, a test account expiring) that a push-only
+  # trigger would only surface whenever someone next happens to open a PR.
+  # Only worth the noise once BASE_URL points at a stable, non-trial-license
+  # environment — see README's "Testing against dev/UAT" section; a trial
+  # instance's seat cap will just make this fail unattended for unrelated
+  # reasons. Delete this trigger if that's not the case yet.
+  schedule:
+    - cron: "0 3 * * *"
 
 jobs:
   e2e:
@@ -27,23 +36,67 @@ jobs:
           # Point this at whatever environment should be tested on each push —
           # e.g. a Mendix Cloud test environment auto-deployed from this branch.
           BASE_URL: ${{ secrets.MENDIX_TEST_APP_URL }}
+          # Default role (Collaborateur / regular user).
           MENDIX_TEST_USERNAME: ${{ secrets.MENDIX_TEST_USERNAME }}
           MENDIX_TEST_PASSWORD: ${{ secrets.MENDIX_TEST_PASSWORD }}
+          # Per-role credentials — wired through for future role-specific tests.
+          # Unset secrets just resolve to empty strings; harmless until used.
+          MENDIX_TEST_USERNAME_MEDECIN: ${{ secrets.MENDIX_TEST_USERNAME_MEDECIN }}
+          MENDIX_TEST_PASSWORD_MEDECIN: ${{ secrets.MENDIX_TEST_PASSWORD_MEDECIN }}
+          MENDIX_TEST_USERNAME_INFIRMIER: ${{ secrets.MENDIX_TEST_USERNAME_INFIRMIER }}
+          MENDIX_TEST_PASSWORD_INFIRMIER: ${{ secrets.MENDIX_TEST_PASSWORD_INFIRMIER }}
+          MENDIX_TEST_USERNAME_ADMIN_FONCTIONNEL: ${{ secrets.MENDIX_TEST_USERNAME_ADMIN_FONCTIONNEL }}
+          MENDIX_TEST_PASSWORD_ADMIN_FONCTIONNEL: ${{ secrets.MENDIX_TEST_PASSWORD_ADMIN_FONCTIONNEL }}
+          MENDIX_TEST_USERNAME_ADMIN: ${{ secrets.MENDIX_TEST_USERNAME_ADMIN }}
+          MENDIX_TEST_PASSWORD_ADMIN: ${{ secrets.MENDIX_TEST_PASSWORD_ADMIN }}
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: projects/OccupationalMedicine/playwright-report/
+          retention-days: 14
+      - name: Upload JUnit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-results
+          path: projects/OccupationalMedicine/test-results/junit.xml
           retention-days: 14
       - name: Upload validation output
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: validation-fail
-          path: generated-tests/
+          path: projects/OccupationalMedicine/generated-tests/
           retention-days: 14
+
+      - name: Link the report from the job summary
+        if: always()
+        run: |
+          echo "### Regression results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "HTML report and JUnit XML are attached as artifacts on this run:" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Inert until a SLACK_WEBHOOK_URL repository secret exists — add one
+      # (Slack: Incoming Webhooks app) to turn this on; nothing to change
+      # here. Checked inside the shell (not in `if:`) so a missing secret
+      # just resolves to an empty string rather than needing separate
+      # handling in the step condition.
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL secret not set — skipping notification."
+            exit 0
+          fi
+          curl -sf -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\": \"Regression suite failed on ${{ github.ref_name }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            "$SLACK_WEBHOOK_URL"
 
   enrich-dry-run:
     runs-on: ubuntu-latest
@@ -58,7 +111,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Dry-run enrich generated test
         run: |
-          node explorer/enrich.js explorer/raw-sample.spec.js ${{ secrets.MENDIX_TEST_APP_URL }} generated-tests/dry-run.spec.js --dry-run
+          node explorer/enrich.js explorer/raw-sample.spec.js ${{ secrets.MENDIX_TEST_APP_URL }} projects/OccupationalMedicine/generated-tests/dry-run.spec.js --role collaborateur --dry-run
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 

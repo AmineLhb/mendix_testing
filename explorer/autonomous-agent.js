@@ -15,11 +15,9 @@
 import OpenAI from "openai";
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
-import path from "node:path";
+import { loadProjectEnv } from "../scripts/project.js";
 
-if (fs.existsSync(path.resolve(process.cwd(), '.env'))) {
-  await import('dotenv').then((d) => d.config({ path: path.resolve(process.cwd(), '.env') }));
-}
+await loadProjectEnv();
 
 const appUrl = process.argv[2];
 const stepsFlagIdx = process.argv.indexOf("--steps");
@@ -79,7 +77,7 @@ or "stop" if you're stuck.`;
       .catch(() => []);
 
     const msg = await client.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       max_tokens: 300,
       messages: [
         { role: "system", content: system },

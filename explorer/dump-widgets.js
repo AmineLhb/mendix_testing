@@ -15,12 +15,11 @@
  */
 import { chromium } from "@playwright/test";
 import { BasePage } from "../pages/BasePage.js";
-import fs from "node:fs";
-import path from "node:path";
+import { loadProjectEnv } from "../scripts/project.js";
 
-if (fs.existsSync(path.resolve(process.cwd(), '.env'))) {
-  await import('dotenv').then((d) => d.config({ path: path.resolve(process.cwd(), '.env') }));
-}
+// Uses the active project's credentials — set MENDIX_PROJECT to target a
+// different one (see scripts/project.js), defaults to DEFAULT_PROJECT.
+await loadProjectEnv();
 
 const [, , appUrl, ...clickSequence] = process.argv;
 

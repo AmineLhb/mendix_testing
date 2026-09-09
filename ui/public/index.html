@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mendix Test Agent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">M</span>
+        <span class="brand-name">Mendix <strong>Test Agent</strong></span>
+      </div>
+
+      <nav class="side-nav">
+        <div class="side-nav-label">Workspace</div>
+        <a href="#" id="side-projects-link" class="side-nav-item active">
+          <span class="side-nav-icon">▤</span> Projects
+        </a>
+      </nav>
+
+      <div id="side-current-project" class="side-current hidden">
+        <div class="side-nav-label">Current project</div>
+        <div id="side-current-name" class="side-current-name"></div>
+      </div>
+
+      <div class="side-footer">
+        <span class="status-dot"></span> UI online &middot; port <span id="side-port">4300</span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="crumbs">
+          <a id="back-link" class="crumb-link hidden" href="#">Projects</a>
+          <span id="crumb-sep" class="crumb-sep hidden">/</span>
+          <h1 id="topbar-title">Projects</h1>
+        </div>
+        <div id="job-status" class="job-status hidden">
+          <span class="spinner"></span>
+          <span id="job-status-text">Running…</span>
+        </div>
+      </header>
+
+      <main id="app">
+        <!-- Project picker -->
+        <section id="view-projects" class="view">
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h2><span class="panel-icon icon-blue">▤</span> Open a recent project</h2>
+            </div>
+            <div id="project-list" class="project-list">
+              <p class="muted">Loading projects…</p>
+            </div>
+          </div>
+
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h2><span class="panel-icon icon-purple">+</span> Test a new project</h2>
+            </div>
+            <form id="new-project-form" class="inline-form">
+              <input
+                id="new-project-name"
+                type="text"
+                placeholder="Project name, e.g. HRPortal"
+                autocomplete="off"
+                required
+              />
+              <button type="submit" class="btn btn-purple">Create project</button>
+            </form>
+            <p id="new-project-error" class="error hidden"></p>
+            <p class="muted">
+              Creates <code>projects/&lt;name&gt;/</code> with an empty
+              <code>generated-tests/</code> and a <code>.env.example</code> to fill in
+              (<code>BASE_URL</code> + credentials for that app).
+            </p>
+          </div>
+        </section>
+
+        <!-- Project dashboard -->
+        <section id="view-project" class="view hidden">
+          <div class="panel panel-wide project-toolbar">
+            <form id="rename-form" class="inline-form">
+              <input id="rename-input" type="text" placeholder="Rename this project" autocomplete="off" />
+              <button type="submit" class="btn btn-purple btn-sm">Rename</button>
+            </form>
+            <button id="delete-project-btn" type="button" class="btn btn-danger btn-sm">Delete project</button>
+          </div>
+          <p id="project-toolbar-error" class="error hidden"></p>
+
+          <details class="panel panel-wide details-panel">
+            <summary>
+              <span class="panel-icon icon-blue">%</span> Environment (.env)
+            </summary>
+            <div class="details-body">
+              <p class="muted">
+                <code>BASE_URL</code> and role credentials for this project. Saved
+                straight to <code>projects/&lt;project&gt;/.env</code> — the same
+                file every script here reads.
+              </p>
+              <textarea id="env-editor" class="env-textarea" spellcheck="false" rows="8"></textarea>
+              <div class="env-actions">
+                <button id="env-save-btn" type="button" class="btn btn-blue btn-sm">Save .env</button>
+                <span id="env-save-status" class="muted"></span>
+              </div>
+            </div>
+          </details>
+
+          <div class="card-grid">
+            <div class="panel card-accent card-purple">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-purple">⏺</span> Record a new test</h2>
+              </div>
+              <form id="record-form" class="stacked-form">
+                <label>
+                  Role
+                  <div class="file-row">
+                    <select id="record-role" required></select>
+                    <button id="add-role-btn" type="button" class="btn-plain">+ role</button>
+                  </div>
+                </label>
+                <div id="add-role-row" class="file-row hidden">
+                  <input id="add-role-input" type="text" placeholder="e.g. supervisor" autocomplete="off" />
+                  <button id="add-role-confirm" type="button" class="btn-plain">Add</button>
+                </div>
+                <label>
+                  Flow name
+                  <input id="record-flow-name" type="text" placeholder="e.g. validate-visit" autocomplete="off" required />
+                </label>
+                <button type="submit" class="btn btn-purple">Start recording</button>
+              </form>
+              <p class="muted">
+                Opens a real browser for you to click through the flow manually — log
+                in as the role you picked, do the flow, then <strong>close the
+                recorder window</strong> to finish. The recording is enriched into a
+                test automatically once you close it.
+              </p>
+            </div>
+
+            <div class="panel card-accent card-green">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-green">▶</span> Run tests</h2>
+              </div>
+              <form id="run-form" class="stacked-form">
+                <label>
+                  Scope
+                  <select id="run-scope">
+                    <option value="all">All roles (full suite)</option>
+                    <option value="role">One role</option>
+                    <option value="file">One test file</option>
+                  </select>
+                </label>
+                <label id="run-role-row" class="hidden">
+                  Role
+                  <select id="run-role"></select>
+                </label>
+                <label id="run-file-row" class="hidden">
+                  File
+                  <div class="file-row">
+                    <select id="run-file"></select>
+                    <button id="view-source-btn" type="button" class="btn-plain">View source</button>
+                  </div>
+                </label>
+                <button type="submit" class="btn btn-green">Run</button>
+              </form>
+            </div>
+
+            <div class="panel card-accent card-blue">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-blue">▤</span> Report</h2>
+              </div>
+              <p class="muted">
+                Opens the HTML report for whatever you most recently ran in this
+                project.
+              </p>
+              <a id="report-link" href="#" target="_blank" class="btn btn-blue">Open report</a>
+            </div>
+          </div>
+
+          <div id="source-panel" class="panel panel-wide hidden">
+            <div class="panel-head source-panel-head">
+              <h2><span class="panel-icon icon-purple">{}</span> <span id="source-title">Source</span></h2>
+              <button id="source-close" type="button" class="btn-plain">Close</button>
+            </div>
+            <div class="source-grid">
+              <div>
+                <div class="source-label">Spec (.spec.js)</div>
+                <pre id="source-spec" class="code-block"></pre>
+              </div>
+              <div>
+                <div class="source-label">Feature (BDD)</div>
+                <pre id="source-feature" class="code-block"></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h2><span class="panel-icon icon-green">↻</span> Recent runs</h2>
+            </div>
+            <div id="history-list" class="history-list">
+              <p class="muted">No runs yet.</p>
+            </div>
+          </div>
+
+          <div class="panel panel-wide terminal-panel">
+            <div class="terminal-titlebar">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-amber"></span>
+              <span class="dot dot-green"></span>
+              <span class="terminal-title">Output</span>
+              <button id="cancel-job-btn" type="button" class="btn-cancel hidden">Cancel</button>
+              <span id="result-badge" class="result-badge hidden"></span>
+            </div>
+            <pre id="log" class="log">Nothing running yet.</pre>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
