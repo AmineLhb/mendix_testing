@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # npm dependencies (Playwright's test runner especially needs to stay in
+  # step with its own browser binaries — a stale @playwright/test version
+  # is a common source of CI failures that have nothing to do with the app
+  # under test).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # The GitHub Actions themselves (actions/checkout, actions/setup-node,
+  # actions/upload-artifact) used in .github/workflows/regression.yml.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

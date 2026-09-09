@@ -207,6 +207,38 @@ hand-authored test, or editing an enriched one — keep them:
   fill password, click submit" as a single `When they log in`), not one
   step per raw Playwright call.
 
+## Test data hygiene
+
+Some flows create real records in the app under test with no automated
+cleanup — `create-visit.spec.js` is the current example: every run adds a
+new Visit, forever, with no delete step. This is a known limitation, not
+an oversight: writing an actual delete step needs the same grounding as
+every other interaction in this project — a real recorded flow against
+the real app's actual widgets — and no "delete a visit" flow has been
+recorded yet, so there's nothing to enrich into a cleanup step. Fabricating
+one from guessed widget names would violate the whole point of this
+tool (every locator here is verified against a real replay, never
+invented) and would likely just fail or silently do the wrong thing.
+
+Until that flow gets recorded, the convention for any test that creates
+data it can't clean up:
+
+- **Mark the data so it's identifiable.** `create-visit.spec.js` fills
+  the reason/description field with a marker like
+  `` `e2e-test ${new Date().toISOString()}` `` instead of a plain literal
+  like `'test'` — so test-created rows are greppable/bulk-cleanable later
+  (by a human, or by a future maintenance script) instead of
+  indistinguishable from real data entered by an actual user.
+- **When you do get a chance to record a delete flow** (as whichever
+  role can delete a visit), wire it into a proper cleanup step —
+  ideally a `test.afterEach`/`test.afterAll` hook in the same spec, using
+  the same marker to find what to delete, rather than a separate
+  disconnected script that can drift out of sync with what the test
+  actually creates.
+- If a flow's created data doesn't matter (e.g. it's naturally bounded,
+  or the app resets it some other way), this doesn't apply — use
+  judgment, this is about flows that create genuinely unbounded data.
+
 ## 3. Run just that one test
 
 ```bash
@@ -277,6 +309,8 @@ get a report for whichever role you just ran.
 | Target a non-default project | prefix any command with `MENDIX_PROJECT=<project>`, or pass `--project <project>` to `new-test`/`enrich` |
 | Create a new project | Use the UI's "Test a new project" button, or `node -e "import('./scripts/project.js').then(m => m.createProject('Name'))"` |
 | Add a role to a project | Use the UI's "+ role" control, or `node -e "import('./scripts/project.js').then(m => m.addProjectRole('Project', 'role'))"` |
+| Run only the fast smoke tests (logins, tagged `@smoke`) | `npm run test:smoke` |
+| Check for missing/incomplete `.env` vars across all projects | `npm run validate:env` |
 | Open the UI | `npm run ui` |
 
 ## Optional: recording from an already-logged-in state

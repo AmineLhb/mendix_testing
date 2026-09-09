@@ -11,7 +11,7 @@ import { BasePage } from '../../../../pages/BasePage.js';
 // exact labels (see scripts/gherkin.js). Edit the labels here, then run
 // `npm run features:sync` to regenerate login.feature to match.
 
-test.describe('Login', () => {
+test.describe('Login', { tag: '@smoke' }, () => {
   // Order matters here: verified 2026-09-04 that submitting a wrong password
   // triggers a brief server-side cooldown that makes the VERY NEXT login
   // attempt fail with a generic "Unknown error occurred" — even with correct

@@ -52,10 +52,19 @@ test('visit app and validate form', async ({ page }) => {
     await basePage.waitForMendixIdle();
   });
 
+  // This test creates a real Visit record every run with no automated
+  // cleanup (deleting one isn't wired up yet — that needs a "delete visit"
+  // flow actually recorded against a real browser first, same as every
+  // other interaction in this file; the widget names for it aren't known
+  // yet). Marking the reason field this way at least makes every row this
+  // suite creates greppable/bulk-cleanable later instead of indistinguishable
+  // from real data — see TESTING_GUIDE.md#test-data-hygiene.
+  const testDataMarker = `e2e-test ${new Date().toISOString()}`;
+
   await test.step('And they fill in the reason for the visit', async () => {
     const motifField = basePage.mx('textArea1');
     await expect(motifField).toBeVisible();
-    await motifField.fill('test');
+    await motifField.fill(testDataMarker);
     await basePage.expectNoErrorMessage();
   });
 
@@ -88,7 +97,7 @@ test('visit app and validate form', async ({ page }) => {
   await test.step('Then the visit is created with the correct details', async () => {
     basePage.expectApiSuccess({ status, body });
     const savedVisit = basePage.findApiObject(body, 'MedicalSurveillance.Visit');
-    expect(savedVisit.attributes.reason.value).toBe('test');
+    expect(savedVisit.attributes.reason.value).toBe(testDataMarker);
     expect(savedVisit.attributes.visitStatus.value).toBe('En_attente');
 
     await basePage.waitForMendixIdle();

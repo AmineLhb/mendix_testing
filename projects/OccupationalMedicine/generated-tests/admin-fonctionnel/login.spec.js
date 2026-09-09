@@ -11,7 +11,7 @@ import { BasePage } from '../../../../pages/BasePage.js';
 // exact labels (see scripts/gherkin.js). Edit the labels here, then run
 // `npm run features:sync` to regenerate login.feature to match.
 
-test.describe('Login (admin-fonctionnel)', () => {
+test.describe('Login (admin-fonctionnel)', { tag: '@smoke' }, () => {
   // Order matters here: verified 2026-09-04 (on the collaborateur role, same
   // login form) that submitting a wrong password triggers a brief
   // server-side cooldown that makes the VERY NEXT login attempt fail with a

@@ -227,6 +227,15 @@ from GitHub Actions repository secrets instead (wired in
 `.github/workflows/regression.yml`), scoped to the `OccupationalMedicine`
 project.
 
+Run `npm run validate:env` any time to check for missing/incomplete
+`.env` vars across every project — it derives what *should* exist from
+each project's `roles.json` (via `scripts/roles.js`'s naming convention,
+the same thing `enrich.js` itself uses) rather than a separate
+hand-maintained checklist, so it can't silently drift out of sync with
+what a generated test actually expects. It's informational only (always
+exits 0) — a role legitimately having no credentials yet is a normal
+in-progress state, not a failure.
+
 | Variable | Lives in | Role folder | Notes |
 |---|---|---|---|
 | `GROQ_API_KEY` | repo root `.env` | n/a — used by `enrich`, `explore` | Never commit; rotate if it's ever pasted somewhere outside your own shell/`.env` |
@@ -308,6 +317,32 @@ Each run:
   `SLACK_WEBHOOK_URL` repository secret is added (Slack → *Apps* →
   *Incoming Webhooks*); nothing in the workflow needs to change to turn
   it on.
+
+`.github/dependabot.yml` opens weekly PRs for npm dependencies and the
+GitHub Actions used in the workflow itself — mainly to catch
+`@playwright/test` drifting out of step with the Playwright browser
+binaries CI installs, a common source of failures that have nothing to
+do with the app under test.
+
+For faster PR feedback than the full suite, every login test is tagged
+`@smoke` (`test.describe(..., { tag: '@smoke' }, ...)`) — run just those
+with `npm run test:smoke`. The CI workflow itself still runs the full
+suite on every push/PR/nightly; splitting *that* into a fast smoke gate
+plus a fuller scheduled run is a real option but changes what blocks a
+merge, so it's left as a deliberate choice to make later rather than
+changed here.
+
+**Verified 2026-09-09: `npm run test:smoke` is not immune to the [license
+seat-cap issue](#known-issue-local-studio-pro-license-seat-limit)** — all
+10 login tests across the 5 roles back to back hit it partway through
+(2 failed with the same "current license does not allow more users to
+sign in" error, confirmed via each failed test's `error-context.md`;
+re-running the failed file alone immediately after passed cleanly). A
+smoke run is actually *more* login-dense per minute than the full suite,
+not less, since it's nothing but logins — don't assume "smoke" implies
+"safe from the seat cap" on a trial license. Same workaround applies:
+role-by-role (`npx playwright test <role>/login.spec.js --grep @smoke`)
+rather than every role's smoke test in one command.
 
 **Not wired up yet, and deliberately left as manual one-time steps
 rather than guessed at:**
