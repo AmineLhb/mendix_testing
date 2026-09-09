@@ -1,37 +1,47 @@
 :root {
   color-scheme: light dark;
 
-  --bg: #eef0f4;
-  --sidebar-bg: #1b1e2a;
-  --sidebar-text: #aeb3c2;
+  --bg: #f6faf9;
+  --sidebar-bg: #042f2e;
+  --sidebar-text: #94a3b8;
   --sidebar-text-strong: #ffffff;
   --panel-bg: #ffffff;
-  --panel-border: #dcdfe6;
-  --text: #1b1e2a;
-  --muted: #6b7280;
-  --log-bg: #12141c;
-  --log-text: #d7dbe6;
+  --panel-border: #ddebe8;
+  --text: #16302b;
+  --muted: #64748b;
+  --log-bg: #020617;
+  --log-text: #ccfbf1;
 
-  --green: #00c58e;
-  --green-dark: #049873;
-  --purple: #6c4dff;
-  --purple-dark: #5636e0;
-  --blue: #0ea5e9;
-  --blue-dark: #0b83bb;
-  --red: #f14c4c;
+  /* Primary — Core Teal */
+  --teal: #14b8a6;
+  --teal-dark: #0f766e;
+  /* Secondary — Blue */
+  --blue: #3b82f6;
+  --blue-dark: #1d4ed8;
+  /* AI / Groq accent — Lavender. Reserved for the Record card specifically
+     (the flow that actually invokes Groq), not used as a generic UI accent. */
+  --purple: #a78bfa;
+  --purple-dark: #7c3aed;
+  /* Success / Passed */
+  --green: #22c55e;
+  --green-dark: #15803d;
+  /* Warning / Running */
+  --amber: #f59e0b;
+  --amber-dark: #b45309;
+  /* Error / Failed */
+  --red: #ef4444;
+  --red-dark: #b91c1c;
 
-  --shadow: 0 1px 2px rgba(27, 30, 42, 0.06);
+  --shadow: 0 1px 2px rgba(22, 48, 43, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1117;
-    --panel-bg: #181b26;
-    --panel-border: #2b2f3d;
-    --text: #e7e9f2;
-    --muted: #9aa1b4;
-    --log-bg: #0a0b10;
-    --log-text: #d7dbe6;
+    --bg: #020617;
+    --panel-bg: #1e293b;
+    --panel-border: #334155;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 }
@@ -76,8 +86,8 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 6px;
-  background: var(--green);
-  color: #0a2b22;
+  background: var(--teal);
+  color: var(--sidebar-bg);
   font-weight: 800;
   font-size: 0.85rem;
   display: flex;
@@ -101,7 +111,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.68rem;
-  color: #6f7488;
+  color: var(--sidebar-text);
   padding: 0 0.6rem 0.5rem;
 }
 
@@ -117,7 +127,7 @@ body {
 }
 
 .side-nav-item.active {
-  border-left-color: var(--green);
+  border-left-color: var(--teal);
   color: var(--sidebar-text-strong);
   background: rgba(255, 255, 255, 0.05);
 }
@@ -139,7 +149,7 @@ body {
 
 .side-current-name {
   padding: 0.4rem 0.6rem;
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--teal);
   background: rgba(255, 255, 255, 0.05);
   color: var(--sidebar-text-strong);
   font-weight: 600;
@@ -153,14 +163,14 @@ body {
   align-items: center;
   gap: 0.45rem;
   font-size: 0.72rem;
-  color: #6f7488;
+  color: var(--sidebar-text);
 }
 
 .status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--teal);
   flex-shrink: 0;
 }
 
@@ -196,7 +206,7 @@ body {
 }
 
 .crumb-link {
-  color: var(--purple);
+  color: var(--teal-dark);
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 600;
@@ -210,24 +220,26 @@ body {
   color: var(--muted);
 }
 
+/* "Running" status — Warning/Running amber, not the primary teal, so a
+   running job reads distinctly from ordinary primary-colored UI chrome. */
 .job-status {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--purple-dark);
-  background: #efeaff;
-  border: 1px solid #ded4ff;
+  color: var(--amber-dark);
+  background: #fffbeb;
+  border: 1px solid #fde68a;
   padding: 0.3rem 0.7rem;
   border-radius: 5px;
 }
 
 @media (prefers-color-scheme: dark) {
   .job-status {
-    background: rgba(108, 77, 255, 0.15);
-    border-color: rgba(108, 77, 255, 0.4);
-    color: #b6a8ff;
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fcd34d;
   }
 }
 
@@ -235,8 +247,8 @@ body {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 2px solid rgba(108, 77, 255, 0.25);
-  border-top-color: var(--purple);
+  border: 2px solid rgba(245, 158, 11, 0.25);
+  border-top-color: var(--amber);
   animation: spin 0.6s linear infinite;
 }
 
@@ -291,12 +303,13 @@ main#app {
   flex-shrink: 0;
 }
 
+/* AI/Groq accent — the Record card only (see the --purple comment above). */
 .icon-purple {
   background: var(--purple);
 }
 
-.icon-green {
-  background: var(--green);
+.icon-teal {
+  background: var(--teal);
 }
 
 .icon-blue {
@@ -325,8 +338,8 @@ main#app {
   border-top-color: var(--purple);
 }
 
-.card-green {
-  border-top-color: var(--green);
+.card-teal {
+  border-top-color: var(--teal);
 }
 
 .card-blue {
@@ -362,7 +375,7 @@ main#app {
   align-items: center;
   padding: 0.8rem 1.05rem;
   border: 1px solid var(--panel-border);
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--teal);
   border-radius: 5px;
   cursor: pointer;
   background: transparent;
@@ -373,9 +386,9 @@ main#app {
 }
 
 .project-card:hover {
-  border-color: var(--purple);
-  border-left-color: var(--purple);
-  background: rgba(108, 77, 255, 0.04);
+  border-color: var(--teal-dark);
+  border-left-color: var(--teal-dark);
+  background: rgba(20, 184, 166, 0.06);
 }
 
 .project-card .name {
@@ -389,7 +402,7 @@ main#app {
 }
 
 .project-card .arrow {
-  color: var(--purple);
+  color: var(--teal-dark);
   font-size: 1.1rem;
 }
 
@@ -434,7 +447,7 @@ select {
 
 input:focus,
 select:focus {
-  outline: 2px solid var(--purple);
+  outline: 2px solid var(--teal);
   outline-offset: 1px;
 }
 
@@ -472,8 +485,8 @@ select:focus {
   background: var(--purple);
 }
 
-.btn-green {
-  background: var(--green);
+.btn-teal {
+  background: var(--teal);
 }
 
 .btn-blue {
@@ -495,7 +508,7 @@ select:focus {
   align-items: center;
   gap: 0.4rem;
   padding: 0.6rem 1rem;
-  background: #22232f;
+  background: #1e293b;
   border-bottom: 1px solid var(--panel-border);
 }
 
@@ -505,6 +518,8 @@ select:focus {
   border-radius: 50%;
 }
 
+/* Traffic-light window chrome — deliberately the literal macOS colors, not
+   the brand red/amber/green tokens; it's decoration, not status. */
 .dot-red {
   background: #ff5f57;
 }
@@ -520,7 +535,7 @@ select:focus {
 .terminal-title {
   margin-left: 0.5rem;
   font-size: 0.76rem;
-  color: #9aa1b4;
+  color: #94a3b8;
   font-weight: 600;
 }
 
@@ -601,7 +616,7 @@ select:focus {
 }
 
 .details-panel summary:hover {
-  color: var(--purple);
+  color: var(--teal-dark);
 }
 
 .details-body {
@@ -643,8 +658,8 @@ select:focus {
 }
 
 .btn-plain:hover {
-  border-color: var(--purple);
-  color: var(--purple);
+  border-color: var(--teal-dark);
+  color: var(--teal-dark);
 }
 
 .file-row {
@@ -749,8 +764,8 @@ select:focus {
 .btn-cancel {
   margin-left: auto;
   background: transparent;
-  border: 1px solid #4a4f5e;
-  color: #c7cbd6;
+  border: 1px solid #334155;
+  color: #cbd5e1;
   border-radius: 4px;
   padding: 0.2rem 0.6rem;
   font-size: 0.72rem;
@@ -783,7 +798,7 @@ select:focus {
   font-size: 0.85rem;
   font-weight: 600;
   box-shadow: var(--shadow);
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--teal);
   animation: toast-in 0.15s ease-out;
 }
 
