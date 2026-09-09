@@ -2,10 +2,15 @@
   color-scheme: light dark;
 
   --bg: #f6faf9;
-  --sidebar-bg: #042f2e;
-  --sidebar-text: #94a3b8;
-  --sidebar-text-strong: #ffffff;
-  --sidebar-accent: #18a39e;
+  --sidebar-bg: #18a39e;
+  /* #18a39e is mid-brightness — dark text actually contrasts better on it
+     than white does (~6.8:1 vs ~3.1:1), so the sidebar's text/accent scheme
+     is inverted from the old near-black background: dark-on-teal instead
+     of light-on-near-black. --sidebar-accent reuses the sidebar's old
+     background color as the new contrast color for active states. */
+  --sidebar-text: #0b3d3a;
+  --sidebar-text-strong: #042f2e;
+  --sidebar-accent: #042f2e;
   --panel-bg: #ffffff;
   --panel-border: #ddebe8;
   --text: #16302b;
@@ -13,8 +18,10 @@
   --log-bg: #020617;
   --log-text: #ccfbf1;
 
-  /* Primary — Core Teal */
-  --teal: #14b8a6;
+  /* Primary — Core Teal. Matches --sidebar-bg exactly (both #18a39e) so the
+     sidebar and the buttons/cards/accents throughout the rest of the app
+     read as one consistent brand teal, not two slightly different ones. */
+  --teal: #18a39e;
   --teal-dark: #0f766e;
   /* Secondary — Blue */
   --blue: #3b82f6;
@@ -130,7 +137,7 @@ body {
 .side-nav-item.active {
   border-left-color: var(--sidebar-accent);
   color: var(--sidebar-text-strong);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 47, 46, 0.1);
 }
 
 .side-nav-item:hover {
@@ -144,14 +151,14 @@ body {
 }
 
 .side-current {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(4, 47, 46, 0.18);
   padding-top: 1rem;
 }
 
 .side-current-name {
   padding: 0.4rem 0.6rem;
   border-left: 3px solid var(--sidebar-accent);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 47, 46, 0.1);
   color: var(--sidebar-text-strong);
   font-weight: 600;
   font-size: 0.88rem;
@@ -304,17 +311,22 @@ main#app {
   flex-shrink: 0;
 }
 
-/* AI/Groq accent — the Record card only (see the --purple comment above). */
+/* The "-dark" shade of each hue, not the lighter primary one — these badges
+   carry small white glyph text (.panel-icon { color: #fff }), and the
+   lighter shades don't contrast enough with white (verified: --purple vs
+   white is ~2.7:1, well under WCAG AA's 4.5:1 for text this size; the
+   "-dark" variants clear 5:1+). AI/Groq accent (purple) stays scoped to the
+   Record card only (see the --purple comment above). */
 .icon-purple {
-  background: var(--purple);
+  background: var(--purple-dark);
 }
 
 .icon-teal {
-  background: var(--teal);
+  background: var(--teal-dark);
 }
 
 .icon-blue {
-  background: var(--blue);
+  background: var(--blue-dark);
 }
 
 .card-grid {
@@ -389,7 +401,7 @@ main#app {
 .project-card:hover {
   border-color: var(--teal-dark);
   border-left-color: var(--teal-dark);
-  background: rgba(20, 184, 166, 0.06);
+  background: rgba(15, 118, 110, 0.06);
 }
 
 .project-card .name {
@@ -483,15 +495,15 @@ select:focus {
 }
 
 .btn-purple {
-  background: var(--purple);
+  background: var(--purple-dark);
 }
 
 .btn-teal {
-  background: var(--teal);
+  background: var(--teal-dark);
 }
 
 .btn-blue {
-  background: var(--blue);
+  background: var(--blue-dark);
 }
 
 /* ---- Terminal / log ---- */
@@ -555,7 +567,7 @@ select:focus {
 }
 
 .result-badge.fail {
-  background: var(--red);
+  background: var(--red-dark);
 }
 
 /* ---- Project toolbar (rename / delete) ---- */
@@ -580,7 +592,7 @@ select:focus {
 }
 
 .btn-danger {
-  background: var(--red);
+  background: var(--red-dark);
 }
 
 /* ---- Collapsible section panel (native <details>) ---- */
