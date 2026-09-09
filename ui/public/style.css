@@ -5,6 +5,7 @@
   --sidebar-bg: #042f2e;
   --sidebar-text: #94a3b8;
   --sidebar-text-strong: #ffffff;
+  --sidebar-accent: #18a39e;
   --panel-bg: #ffffff;
   --panel-border: #ddebe8;
   --text: #16302b;
@@ -86,7 +87,7 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 6px;
-  background: var(--teal);
+  background: var(--sidebar-accent);
   color: var(--sidebar-bg);
   font-weight: 800;
   font-size: 0.85rem;
@@ -127,7 +128,7 @@ body {
 }
 
 .side-nav-item.active {
-  border-left-color: var(--teal);
+  border-left-color: var(--sidebar-accent);
   color: var(--sidebar-text-strong);
   background: rgba(255, 255, 255, 0.05);
 }
@@ -149,7 +150,7 @@ body {
 
 .side-current-name {
   padding: 0.4rem 0.6rem;
-  border-left: 3px solid var(--teal);
+  border-left: 3px solid var(--sidebar-accent);
   background: rgba(255, 255, 255, 0.05);
   color: var(--sidebar-text-strong);
   font-weight: 600;
@@ -170,7 +171,7 @@ body {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--sidebar-accent);
   flex-shrink: 0;
 }
 
