@@ -2,15 +2,15 @@
   color-scheme: light dark;
 
   --bg: #f6faf9;
-  --sidebar-bg: #18a39e;
-  /* #18a39e is mid-brightness — dark text actually contrasts better on it
-     than white does (~6.8:1 vs ~3.1:1), so the sidebar's text/accent scheme
-     is inverted from the old near-black background: dark-on-teal instead
-     of light-on-near-black. --sidebar-accent reuses the sidebar's old
-     background color as the new contrast color for active states. */
-  --sidebar-text: #0b3d3a;
-  --sidebar-text-strong: #042f2e;
-  --sidebar-accent: #042f2e;
+  /* A full solid-teal sidebar background read as a flat color block rather
+     than UI chrome, and clashed with everything else on the page (verified
+     against a screenshot) — back to a dark sidebar with #18a39e used as
+     its accent (active nav, brand icon, status dot), the same pattern
+     every other dashboard-style sidebar in this app already follows. */
+  --sidebar-bg: #042f2e;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-strong: #ffffff;
+  --sidebar-accent: #18a39e;
   --panel-bg: #ffffff;
   --panel-border: #ddebe8;
   --text: #16302b;
@@ -137,7 +137,7 @@ body {
 .side-nav-item.active {
   border-left-color: var(--sidebar-accent);
   color: var(--sidebar-text-strong);
-  background: rgba(4, 47, 46, 0.1);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .side-nav-item:hover {
@@ -151,14 +151,14 @@ body {
 }
 
 .side-current {
-  border-top: 1px solid rgba(4, 47, 46, 0.18);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 1rem;
 }
 
 .side-current-name {
   padding: 0.4rem 0.6rem;
   border-left: 3px solid var(--sidebar-accent);
-  background: rgba(4, 47, 46, 0.1);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--sidebar-text-strong);
   font-weight: 600;
   font-size: 0.88rem;
