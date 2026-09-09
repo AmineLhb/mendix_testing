@@ -52,21 +52,21 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: projects/OccupationalMedicine/playwright-report/
           retention-days: 14
       - name: Upload JUnit results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-results
           path: projects/OccupationalMedicine/test-results/junit.xml
           retention-days: 14
       - name: Upload validation output
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: validation-fail
           path: projects/OccupationalMedicine/generated-tests/
