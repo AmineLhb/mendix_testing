@@ -17,6 +17,11 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    # write is needed for the "Post or update PR comment" step below; read is
+    # the default for everything else this job does (checkout, artifacts).
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +84,56 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "HTML report and JUnit XML are attached as artifacts on this run:" >> "$GITHUB_STEP_SUMMARY"
           echo "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # PR comment with the pass/fail summary — only on a pull_request event
+      # (a push to main has no PR to comment on). Posts once, then EDITS that
+      # same comment on subsequent pushes to the branch instead of piling up
+      # a new one per push — found by a hidden marker in the comment body.
+      - name: Build PR comment body
+        if: always() && github.event_name == 'pull_request'
+        id: pr_summary
+        run: |
+          {
+            echo 'body<<PRSUMMARYEOF'
+            node scripts/pr-comment-summary.js
+            echo ''
+            echo "[Full report and JUnit XML](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo 'PRSUMMARYEOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Post or update PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "<!-- mendix-test-agent-regression-summary -->";
+            // toJSON() produces a properly quoted/escaped JS string literal,
+            // substituted here BEFORE this script is parsed as JS — assigning
+            // it directly (not interpolating inside a separate template
+            // literal) is what keeps embedded backticks/newlines in the
+            // summary from breaking this script.
+            const summary = ${{ toJSON(steps.pr_summary.outputs.body) }};
+            const body = `${marker}\n${summary}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
       # Inert until a SLACK_WEBHOOK_URL repository secret exists — add one
       # (Slack: Incoming Webhooks app) to turn this on; nothing to change

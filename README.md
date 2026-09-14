@@ -7,7 +7,12 @@ multi-project: test as many separate Mendix apps as you like from the same
 tool, each with its own tests and credentials.
 
 > Just want the commands to record and run a new test? See
-> [TESTING_GUIDE.md](TESTING_GUIDE.md).
+> [TESTING_GUIDE.md](TESTING_GUIDE.md). For the full project report — goal,
+> technology stack, architecture and activity diagrams, feature catalog,
+> and whether this is Mendix-only or reusable for other stacks — see
+> [docs/mendix-test-agent-report.pdf](docs/mendix-test-agent-report.pdf)
+> (source: `docs/report.html`, regenerate with
+> `node docs/render-report-pdf.mjs`).
 
 ## UI
 
@@ -16,38 +21,81 @@ npm run ui
 ```
 
 Opens a browser to `http://localhost:4300` — a project picker ("open a
-recent project" or "test a new project") and, per project:
+recent project" or "test a new project") and, per project, seven tabs:
 
-- **Record** a new test (opens a real Playwright browser for you to click
-  through the flow manually) and **Run** tests (all roles, one role, one
-  file, or by tag) — both stream live output to the page, with a
-  **Cancel** button while a job is running and a desktop notification
-  when it finishes if you've tabbed away.
-- **"+ role"** next to Record's role picker — add a role on the fly
-  (per-project, see [Environment variables](#environment-variables)) and
-  select it immediately, instead of only being able to pick from a fixed
-  list.
-- **Pending review** — a recording never writes straight to
-  `generated-tests/`. It lands here first as a before/after diff (raw
-  recording vs. AI-enriched output) with Approve / Reject / Regenerate —
-  see [Reviewing an AI-generated test before it counts](TESTING_GUIDE.md#reviewing-an-ai-generated-test-before-it-counts).
-  A self-healing fix proposal (see below) shows up in the same queue.
-- **Self-heal a broken locator** — when a widget gets renamed in Studio
-  Pro, propose a fix grounded in a real replay of the app right now
-  (never a guessed rename) — see
-  [Self-healing a broken locator](TESTING_GUIDE.md#self-healing-a-broken-locator).
-- **Report** — opens the HTML report for the last run.
-- **Recent runs** — the last 20 record/run jobs for this project (pass/fail,
-  what was run, when), persisted to
-  `projects/<project>/run-history.json` so it survives closing the UI —
-  a plain JSON file, no database to install or run.
-- **View source** next to the file picker — shows a run's `.spec.js` next
-  to its derived `.feature` doc side by side, without opening an editor.
-- **Environment (.env)** — a collapsible section; expand it to edit
-  `BASE_URL` and role credentials for the project directly in the page,
-  saves straight to `projects/<project>/.env`.
-- **Rename / Delete project** at the top of the dashboard (delete asks for
-  confirmation first — it removes that project's folder entirely).
+**Tests** — every generated test, with an AI quality score (locator
+stability, assertion coverage, async handling, BDD structure — computed
+straight from the spec file, never self-reported), its latest pass/fail
+and duration, and a flaky-test flag once a test's recent runs are a
+genuine mix of pass/fail. Filter by role, tag, status, or a name search —
+client-side over the already-loaded list, no round-trip per keystroke.
+Per-row actions: **Run** just that test, **Source** (spec + derived
+`.feature` side by side), and **History** (the last 20 runs, with a link
+to the failure screenshot Playwright captured for any failed one) — see
+[Test explorer, quality score, and flaky
+detection](TESTING_GUIDE.md#test-explorer-quality-score-and-flaky-detection).
+
+**Coverage** — a flow × role matrix built by scanning `generated-tests/`
+directly, so a gap like "only one role has a test for this flow" is
+visible at a glance.
+
+**Runs** — **Run** tests (all roles, one role, one file, or by tag)
+against **Default** or a named [environment](TESTING_GUIDE.md#multiple-environments),
+streamed live with a **Cancel** button and a desktop notification when
+it finishes if you've tabbed away; **Report** opens the HTML report for
+the last run; **Recent runs** — the last 20 record/run jobs for this
+project (pass/fail, what was run, when, which environment), persisted to
+`projects/<project>/run-history.json` so it survives closing the UI — a
+plain JSON file, no database to install or run.
+
+**Review** — **Record** a new test (opens a real Playwright browser for
+you to click through the flow manually), with **"+ role"** next to the
+role picker to add a role on the fly (per-project, see [Environment
+variables](#environment-variables)); **Fix an existing test** — three
+modes covering every way a test can need attention: **Update
+(re-record)** the whole flow from scratch, **Analyze & heal locators**
+scans the whole test against the app right now and proposes confident
+fixes only for locators that no longer resolve, and **Extend (record
+more)** continues a scenario that grew new steps, starting the recorder
+already logged in and partway through — see [Fixing an existing test:
+Update / Analyze /
+Extend](TESTING_GUIDE.md#fixing-an-existing-test-update-analyze-extend);
+and **Pending review** — a recording never writes straight to
+`generated-tests/`. It lands here first as a before/after diff (raw
+recording vs. AI-enriched output, plus the quality score) with Approve /
+Reject / Regenerate — see [Reviewing an AI-generated test before it
+counts](TESTING_GUIDE.md#reviewing-an-ai-generated-test-before-it-counts).
+Any fix/update/extend proposal shows up in the same queue.
+
+**App Scan** — the [Mendix App
+Scanner](TESTING_GUIDE.md#mendix-app-scanner): log in as a role once, crawl
+same-origin navigation reachable from the landing page, and see every real
+page/widget actually found — grounded in what a real session sees, never
+Studio Pro project metadata this tool has no access to.
+
+**Insights** — performance trends per test (average/P95/latest duration,
+flagging a test that ran meaningfully slower than its own history),
+regression intelligence (diffs the two most recent full runs — new
+failures, recovered tests, still-failing), the coverage map (real
+`mx-name-*` widgets found by the App Scanner cross-referenced against
+what generated tests actually reference), test dependencies, and the
+[authorization boundary
+scan](TESTING_GUIDE.md#authorization-boundary-scan) — cross-role security
+check comparing two roles' App Scans for widgets exposed to a
+lower-privilege role that shouldn't see them.
+
+**Settings** — **Environments** to edit `BASE_URL` and role credentials —
+**Default** is the project's own `.env`; add named ones (QA, Staging, ...)
+to run the exact same tests against a different app instance with zero
+test-source changes — see [Multiple
+environments](TESTING_GUIDE.md#multiple-environments); **Mendix
+sessions** — check or clear active app sessions directly via the
+database, a faster alternative to restarting the app when the trial
+license's seat cap gets hit — see [Resetting stuck Mendix
+sessions](TESTING_GUIDE.md#resetting-stuck-mendix-sessions); **Rename /
+Delete project** (delete asks for confirmation first — it removes that
+project's folder entirely). Both the Environments and Mendix sessions
+cards are collapsible (click the header) so they don't dominate the page.
 
 **While a job is running, Cancel is the only action available** — Run,
 Record, Rename, Delete, and Save .env are all disabled, and navigating
@@ -86,13 +134,15 @@ Each Mendix app under test gets its own folder:
 
 ```text
 projects/<ProjectName>/
-  .env                 # BASE_URL + role credentials for this app (gitignored)
+  .env                 # BASE_URL + role credentials for this app (gitignored) — the Default environment
   .env.example          # template — copy to .env and fill in
+  environments/          # <envName>.env — additional named environments (gitignored), same format as .env
   roles.json             # which roles this project has (e.g. ["collaborateur", "medecin"])
   generated-tests/      # <role>/<flow-name>.spec.js, one folder per app role
-  explorer/              # raw codegen recordings for this project (gitignored)
+  explorer/              # raw codegen recordings (gitignored); explorer/app-scan/<role>.json — App Scanner output (gitignored)
   playwright-report/    # HTML report for the last run (gitignored)
   run-history.json      # last 20 UI record/run jobs, for the "Recent runs" panel (gitignored)
+  test-history.json     # last 20 runs per test, for the Tests tab's quality/flaky data (gitignored)
 ```
 
 `OccupationalMedicine` is the first project, containing all the tests
@@ -419,15 +469,90 @@ live app.** Full detail on each is in TESTING_GUIDE.md.
   error, via a custom reporter (`scripts/ai-failure-reporter.js`). Purely
   additive — the actual error/screenshot/report are unchanged, and a
   missing key or Groq outage never breaks the test run itself.
-- **[Self-healing a broken locator](TESTING_GUIDE.md#self-healing-a-broken-locator)**
-  (`scripts/heal.js`) — when a widget gets renamed in Studio Pro, this
-  replays the test's original raw recording against the app *right now*
-  (the same replay mechanism `enrich.js` uses, shared via
-  `scripts/replay-widgets.js`) and asks the model to pick a replacement
-  only from widgets that are genuinely visible in that live snapshot,
-  never an invented name. The proposed fix goes through the same
-  pending-review queue as a new test — approving it patches the existing
-  test in place.
+- **[Fixing an existing test: Update / Analyze / Extend](TESTING_GUIDE.md#fixing-an-existing-test-update-analyze-extend)**
+  — three modes, none requiring the test's original raw recording to
+  still exist: they replay the test's own current code, which already
+  knows how to get where it needs to go
+  (`scripts/replay-widgets.js`). **Analyze & heal locators**
+  (`scripts/heal-scan.js`) scans a whole test against the app right now
+  and proposes a fix only for a locator with a confident replacement
+  among widgets genuinely visible in that live replay, never an invented
+  name — anything below the confidence threshold is reported as
+  unresolved instead of guessed. **Update (re-record)** re-records the
+  whole flow from scratch. **Extend (record more)** replays the test's
+  own steps to a logged-in starting point, then only the new tail needs
+  recording — the new steps are spliced deterministically into the
+  existing file, not regenerated by the model. All three go through the
+  same pending-review queue as a new test — approving one patches
+  (Analyze, Extend) or replaces (Update) the existing test.
+
+Two more pieces don't call Groq at all — deliberately deterministic,
+not AI-guessed, because they're about *existing* content rather than
+generating anything new:
+
+- **[Test quality score](TESTING_GUIDE.md#test-explorer-quality-score-and-flaky-detection)**
+  (`scripts/confidence.js`) — inspects a spec file directly for locator
+  stability, assertion coverage, fixed-wait usage, and BDD structure.
+  Shown for every test in the Tests tab and for a pending proposal before
+  you approve it. Also reports (separately, not folded into the overall
+  score, since it's a coverage-completeness signal rather than a
+  maintainability one) a negative-path coverage heuristic — whether the
+  test checks anything besides the happy path.
+- **[Flaky-test detection](TESTING_GUIDE.md#test-explorer-quality-score-and-flaky-detection)**
+  — reads `test-history.json` (appended to by
+  `scripts/test-history-reporter.js` on every test, every run) and flags
+  a test whose recent runs are a genuine mix of pass/fail, with its
+  failure rate.
+
+## Test engineering features
+
+- **Reusable business steps** (`steps/business-steps.js`) — an action
+  sequence genuinely identical across multiple tests (the login flow every
+  role's `login.spec.js` used to duplicate) factored out once. Extracted
+  verbatim from the already-passing specs, not invented; the calling spec
+  still writes its own `test.step('Given/When/Then ...')` wrapper so the
+  BDD label stays visible to `scripts/gherkin.js`'s `.feature` derivation.
+- **[Multiple environments](TESTING_GUIDE.md#multiple-environments)** —
+  `projects/<name>/environments/<envName>.env` alongside the project's own
+  `.env` ("Default"); pick one per run in the UI or via `MENDIX_ENV=<name>`
+  on the CLI. The same test runs unchanged against either — enforced by
+  `explorer/enrich.js` always generating a relative `page.goto('/')`
+  instead of a hardcoded app URL.
+- **[Mendix App Scanner](TESTING_GUIDE.md#mendix-app-scanner)**
+  (`scripts/scan-app.js`) — v1: a single-login, best-effort crawl of
+  same-origin navigation reachable from the landing page, snapshotting real
+  `mx-name-*` widgets per page found. Not a Studio Pro project scanner (no
+  access to pages/microflows/entities at that level) — only what an actual
+  browser session sees, same ground-truth principle as everything else here.
+- **Evaluation dataset scaffolding** (`evaluation/`, `scripts/run-benchmark.js`)
+  — folder structure for a future benchmark suite (recordings, expected
+  outputs, failure/healing cases). Currently empty; `run-benchmark.js`
+  reports that honestly ("0 cases in dataset") rather than a fabricated
+  score — see `evaluation/README.md`.
+- **[Accessibility checks](TESTING_GUIDE.md#accessibility-checks-opt-in)**
+  (`BasePage.expectNoAccessibilityViolations()`) — opt-in wrapper around
+  `@axe-core/playwright`, scanning against WCAG 2.0/2.1 A+AA by default.
+  Throws with every violation's rule id, impact, and a real CSS selector,
+  not just pass/fail.
+- **[Visual regression](TESTING_GUIDE.md#visual-regression-opt-in)**
+  (`BasePage.expectVisualMatch(name)`) — opt-in wrapper around
+  Playwright's `toHaveScreenshot()`, baselines stored next to the spec
+  that created them.
+- **[Cross-browser coverage](TESTING_GUIDE.md#cross-browser-coverage-opt-in)**
+  — opt-in via `MENDIX_TEST_BROWSERS` (comma-separated chromium/firefox/
+  webkit); off by default since it multiplies login volume against the
+  trial license's seat cap, safe once `BASE_URL` points elsewhere.
+- **[Authorization boundary scan](TESTING_GUIDE.md#authorization-boundary-scan)**
+  (`scripts/auth-boundary-scan.js`) — compares two roles' App Scans and
+  flags a widget exposed to a lower-privilege role that only ever showed
+  up in a higher-privilege role's scan. A finding means "exposed in the
+  DOM," not a confirmed exploit — Mendix commonly also enforces access
+  server-side, so it's a signal to verify by hand.
+- **Automatic Mendix session clearing** — when `MENDIX_DB_*` is
+  configured, sessions clear once before a run starts and again after
+  every individual test attempt (not just via the manual [Resetting stuck
+  Mendix sessions](#known-issue-local-studio-pro-license-seat-limit)
+  command) — silently inert without DB config.
 
 ## Verified against the real app
 
@@ -518,3 +643,25 @@ and restart the app (or otherwise clear active sessions) between roles
 if you hit the cap. Save the full `npm test` run for occasions where you
 specifically need to confirm the whole suite together (e.g. right before
 a release), not as the everyday iteration loop.
+
+**A third option for clearing a stranded seat** (added 2026-09-11, see
+`scripts/reset-mendix-sessions.js`), besides "wait for it to expire" and
+"restart the app in Studio Pro": connect directly to the app's own
+database and delete the stuck session row(s) — much faster than a full
+app restart, and (via `--role`) can target just the one role that's stuck
+without touching anyone else's active session. Needs
+`MENDIX_DB_HOST/PORT/NAME/USER/PASSWORD` filled in for the active
+environment first (Studio Pro's App Settings > Configurations has the
+real host/port for a local run):
+
+```bash
+npm run reset-sessions                          # read-only report — what's there right now
+npm run reset-sessions -- --all --yes            # clear every session (safe on a local/trial DB)
+npm run reset-sessions -- --role medecin --yes   # clear just medecin's session
+```
+
+The table/column names it looks for (`system$session`, `system$user`) are
+Mendix's own standard names for the built-in System module, but hadn't
+been verified against a real database when this was built — run the
+plain read-only report first; if it doesn't find what it expects, that's
+the signal to look closer, not something to assume works.

@@ -31,6 +31,19 @@ const argv = process.argv.slice(2);
 const dryRunIdx = argv.indexOf('--dry-run');
 const dryRun = dryRunIdx > -1;
 if (dryRun) argv.splice(dryRunIdx, 1);
+// --extend-steps-only: used by Extend/continue mode (record-and-enrich.js
+// --extend) for a raw recording that's just the NEW tail of an existing
+// scenario, captured starting from a storageState snapshot (already
+// logged in, already partway through the flow) rather than from scratch.
+// Changes the output contract from "a whole standalone test file" to "just
+// the new test.step() block(s) to append" — record-and-enrich.js splices
+// those deterministically into the existing spec itself; the model is
+// never asked to reproduce the surrounding file, which is exactly the kind
+// of large-scale text regeneration that risks silently corrupting a test
+// that was already passing.
+const extendStepsOnlyIdx = argv.indexOf('--extend-steps-only');
+const extendStepsOnly = extendStepsOnlyIdx > -1;
+if (extendStepsOnly) argv.splice(extendStepsOnlyIdx, 1);
 const roleIdx = argv.indexOf('--role');
 const role = roleIdx > -1 ? argv[roleIdx + 1] : 'collaborateur';
 if (roleIdx > -1) argv.splice(roleIdx, 2);
@@ -135,6 +148,40 @@ clean, maintainable Playwright tests. Rules:
   methods (no .shouldHaveValue, no calling basePage as a function like basePage(x)) —
   BasePage.mx() returns a Playwright Locator, so assertions go through
   \`expect(locator)\`, imported from "@playwright/test", not through basePage directly.
+- For a delete/remove action (the recording clicks a delete-type button and the
+  target row disappears from a list), don't just assert the row is gone — verify the
+  delete actually happened, three ways: (1) capture the list's row locator's
+  \`.count()\` BEFORE the delete click and again AFTER, then
+  \`expect(countAfter).toBe(countBefore - 1)\` — never hardcode an assumed absolute
+  count, always compare against the real before-count; (2) assert the specific
+  deleted row's identifying locator (disambiguated with \`.filter({ hasText: '...' })\`
+  the same way ambiguous widgets are handled elsewhere) is gone via
+  \`await expect(...).toHaveCount(0)\`; (3) wrap the delete click itself with
+  \`basePage.captureApiResponse(() => ..., { matchBody: ... })\` and call
+  \`basePage.expectApiSuccess({ status, body })\` so a delete that fails server-side
+  but still updates the list optimistically in the UI doesn't pass by accident.
+- For a file/document upload action (a \`setInputFiles\` call, or a click on a widget
+  that is clearly a file/document picker), wrap the triggering action with
+  \`basePage.captureApiResponse\` and call \`basePage.expectApiSuccess({ status, body })\`
+  to confirm the upload succeeded server-side — a success toast alone doesn't prove
+  the file was actually persisted. If the response body contains the created/updated
+  object, use \`basePage.findApiObject(body, '<ObjectType>')\` (best guess at the
+  Mendix entity name from context) and assert on a field that indicates the file is
+  really attached, rather than stopping at the UI toast.
+- For a workflow-transition action (a button whose visible text is a verb like
+  Validate/Submit/Approve/Return/Reject/Recall/Cancel — common in Mendix approval
+  workflows), assert on the resulting status text/badge becoming visible with the
+  expected value after the transition, using the widget from the following step's
+  newlyVisibleWidgets exactly like any other post-action assertion — a workflow
+  status change is ground truth from replay, not a guess, so treat it the same way.
+- These three patterns are instances of one rule: for any action with a real server
+  round trip worth confirming (create, update, delete, upload, a workflow-status
+  change), prefer combining a DOM assertion with an API-response check via
+  captureApiResponse + expectApiSuccess + findApiObject over a single toBeVisible() —
+  always using only the real BasePage/Locator/expect APIs already listed above, never
+  an invented method, and only when the recording's own actions actually exercise
+  that kind of round trip (don't add an upload/delete/workflow check to a step that
+  wasn't one).
 - The raw recording may contain literal credentials (usernames, emails, passwords)
   typed during manual recording. Never hardcode these in the output. This test is for
   the "${role}" role, so replace any password/secret value with
@@ -143,18 +190,31 @@ clean, maintainable Playwright tests. Rules:
   MENDIX_TEST_USERNAME/MENDIX_TEST_PASSWORD ones, unless they're the same (default
   role). Fall back to an empty string if the env var is unset
   (e.g. \`process.env.${passwordVar} ?? ""\`).
+- The raw recording's initial \`page.goto('${appUrl}...')\` (or any goto to that same
+  origin) must become a RELATIVE \`page.goto('/')\` (or the relative path only, e.g.
+  \`page.goto('/p/somepage')\`) in the output, never the absolute URL. Playwright's
+  configured \`baseURL\` (this project's BASE_URL env var) already resolves relative
+  gotos — hardcoding the absolute app URL would make the test always hit that one
+  literal address even when run against a different environment (see "Multiple
+  environments" in the docs), defeating the whole point of BASE_URL being
+  configurable per environment.
 - Pay attention to navigation: if a click causes the app to move to a different page
   (a login button, a save button that returns to a list, etc.), any widget from the
   page you were just on no longer exists afterward. Never assert on a pre-navigation
   widget after the click that navigates away from it — assert on it BEFORE that click,
   or assert on widgets from the NEW page after it. When unsure whether a click
   navigates, prefer asserting on something you know is on the resulting page.
-- If the recording logs in, end the test with \`await basePage.logout();\` (a real
+${
+  extendStepsOnly
+    ? `- Do NOT add a \`basePage.logout()\` call anywhere in your output — see EXTEND MODE
+  below, the scenario this gets appended to already has its own closing logout step.`
+    : `- If the recording logs in, end the test with \`await basePage.logout();\` (a real
   BasePage method — clicks the icon-only logout button and confirms the login form
   reappears). This project's local Mendix license caps concurrent signed-in sessions;
   without an explicit logout each test's session sits active until it times out on
   its own, and enough test runs in a row exhausts the seat limit. Skip this only for
-  a test that never successfully logs in (e.g. a wrong-credentials negative test).
+  a test that never successfully logs in (e.g. a wrong-credentials negative test).`
+}
 - Wrap every logical group of actions inside each test in
   \`await test.step('Given/When/Then <plain-English description>', async () => { ... });\`,
   following BDD/Gherkin phrasing — this is what turns Playwright's own HTML report into
@@ -177,9 +237,27 @@ clean, maintainable Playwright tests. Rules:
   - Write these as a real tester would narrate the scenario out loud — third person,
     present tense, no implementation detail like widget names or CSS selectors in the
     label text itself (that stays in the code inside the step).
-- Output ONLY the final .spec.js file contents, no explanation, no markdown fences.
+${
+  extendStepsOnly
+    ? `- EXTEND MODE — this is NOT a full test. This raw recording is only the NEW tail of an
+  already-existing, already-passing scenario: it starts from a storageState snapshot
+  (already logged in, already partway through the flow), not from a blank page.
+  Output ONLY one or more \`await test.step('Given/When/Then ...', async () => { ... });\`
+  block(s) covering the actions above, in order — NOT a \`test(...)\` wrapper, NOT any
+  \`import\` lines, NOT a \`basePage.logout()\` call (the existing scenario this gets
+  appended to already ends with its own logout step — do not add a second one). Assume
+  \`page\` and \`basePage\` are already in scope exactly as an existing test.step() body
+  would see them. If a value needs to flow from one of your new steps to another
+  (e.g. an API response's status/body), declare it with \`let\` INSIDE the first step
+  that needs it and read it from a step you also wrote — do not assume any variable
+  from the ORIGINAL scenario's earlier steps is still in scope, since this fragment is
+  spliced in textually and can't see those steps' local variables.
+  Output ONLY the new test.step() block(s), no explanation, no markdown fences, no
+  surrounding test()/describe() wrapper.`
+    : `- Output ONLY the final .spec.js file contents, no explanation, no markdown fences.
   The output must be syntactically valid JavaScript — double-check every line calls a
-  real method that exists on Locator, Page, or BasePage before emitting it.`;
+  real method that exists on Locator, Page, or BasePage before emitting it.`
+}`;
 
   const userMsg = `Raw Playwright recording, replayed step by step. Each entry is the
 action that was executed, followed by the real mx-name-* widgets visible in the DOM
@@ -191,7 +269,11 @@ ${JSON.stringify(replaySteps, null, 2)}
 
 App URL: ${appUrl}
 
-Write the enriched test file now, covering every action above in order.`;
+${
+  extendStepsOnly
+    ? "Write the new test.step() block(s) now, covering every action above in order — nothing else."
+    : "Write the enriched test file now, covering every action above in order."
+}`;
 
   const response = await client.chat.completions.create({
     model: "openai/gpt-oss-120b",
@@ -216,6 +298,22 @@ Write the enriched test file now, covering every action above in order.`;
       console.error(`Refusing to write enriched test. Ensure the model uses process.env.${usernameVar} and rerun the enrich step.`);
       process.exit(1);
     }
+  }
+
+  if (extendStepsOnly) {
+    // Just the new step fragment — no whole-file .feature derivation makes
+    // sense here (see this file's --extend-steps-only comment); the caller
+    // (record-and-enrich.js --extend) splices this text into the existing
+    // spec and re-derives the .feature from THAT once it's a real file.
+    if (dryRun) {
+      console.log("Dry-run mode: new step fragment validated (no write).\nPreview:\n");
+      console.log(text.slice(0, 2000));
+      process.exit(foundEmails.length ? 2 : 0);
+    }
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, text);
+    console.log(`Wrote new step fragment to ${outputPath}`);
+    return;
   }
 
   const fallbackTitle = path.basename(outputPath, ".spec.js");

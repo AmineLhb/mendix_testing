@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import { loadProjectEnv, projectPaths } from "./scripts/project.js";
 
 // Loads the repo root .env (tool-level, e.g. GROQ_API_KEY) then the active
@@ -11,9 +11,38 @@ import { loadProjectEnv, projectPaths } from "./scripts/project.js";
 await loadProjectEnv();
 const paths = projectPaths();
 
+// Cross-browser coverage — strictly opt-in via MENDIX_TEST_BROWSERS (comma
+// separated: chromium, firefox, webkit), left unset/undefined by default so
+// this changes NOTHING unless a caller deliberately turns it on. NOT
+// recommended while still capped by the trial Mendix license's concurrent-
+// session limit (see the "Known constraint" section below and README's
+// "Known issue"): running the same suite across N browser projects
+// multiplies login volume by N against that exact same cap, on top of the
+// workers:1/retries:1 mitigations already in place for a single browser.
+// Safe to use once BASE_URL points at a non-trial environment, e.g.:
+//   MENDIX_TEST_BROWSERS=chromium,firefox npx playwright test admin/
+const browserNames = (process.env.MENDIX_TEST_BROWSERS || "")
+  .split(",")
+  .map((b) => b.trim())
+  .filter(Boolean);
+const BROWSER_DEVICE = { chromium: "Desktop Chrome", firefox: "Desktop Firefox", webkit: "Desktop Safari" };
+const projects = browserNames.length
+  ? browserNames.map((name) => {
+      if (!BROWSER_DEVICE[name]) {
+        throw new Error(`Unknown browser "${name}" in MENDIX_TEST_BROWSERS — expected chromium, firefox, or webkit.`);
+      }
+      return { name, use: { ...devices[BROWSER_DEVICE[name]] } };
+    })
+  : undefined;
+
 export default defineConfig({
   testDir: paths.generatedTests,
   outputDir: paths.testResults,
+  // Clears any stranded Mendix sessions once, before the run starts —
+  // automatic counterpart to the manual `npm run reset-sessions` /
+  // Settings tab button. No-ops silently if MENDIX_DB_* isn't configured
+  // for the active project/environment. See scripts/global-setup.js.
+  globalSetup: "./scripts/global-setup.js",
   timeout: 30000,
   // Verified 2026-09-04: running tests in parallel against a local Mendix Studio
   // Pro dev runtime causes real, non-flaky failures (concurrent logins time out
@@ -47,11 +76,13 @@ export default defineConfig({
     ["list"],
     ["html", { open: "never", outputFolder: paths.playwrightReport }],
     ["junit", { outputFile: path.join(paths.testResults, "junit.xml") }],
-    // Prints a plain-English diagnosis under any failed test, using the same
-    // Groq call as enrich.js — no-ops (prints nothing extra) if GROQ_API_KEY
-    // isn't set or the call fails, so a missing key/outage never breaks the
-    // actual test run. See scripts/ai-failure-reporter.js.
-    ["./scripts/ai-failure-reporter.js"],
+    // Appends one entry per test to projects/<name>/test-history.json —
+    // powers the Tests tab's per-test timeline, flaky-test detection, and
+    // failure-screenshot links — and, on a failure, prints the same
+    // plain-English diagnosis ai-failure-reporter.js's analyzeFailure()
+    // always has (merged into this one reporter so there's exactly one Groq
+    // call per failure; see scripts/test-history-reporter.js's header).
+    ["./scripts/test-history-reporter.js"],
   ],
   use: {
     baseURL: process.env.BASE_URL || "http://localhost:8080",
@@ -62,4 +93,14 @@ export default defineConfig({
     trace: "off",
     screenshot: "only-on-failure",
   },
+  // Visual regression (opt-in — see BasePage.expectVisualMatch()): baselines
+  // land in generated-tests/<role>/<file>-snapshots/ next to the spec that
+  // created them, auto-compared on every run once a baseline exists.
+  // 2% pixel-diff tolerance — loose enough to absorb anti-aliasing/font
+  // rendering noise between runs, tight enough to catch a real layout change.
+  // No test calls this yet, so this setting is inert until one does.
+  expect: {
+    toHaveScreenshot: { maxDiffPixelRatio: 0.02 },
+  },
+  ...(projects ? { projects } : {}),
 });

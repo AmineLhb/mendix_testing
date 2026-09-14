@@ -60,13 +60,12 @@
             <div class="panel-head">
               <h2><span class="panel-icon icon-teal">+</span> Test a new project</h2>
             </div>
-            <form id="new-project-form" class="inline-form">
+            <form id="new-project-form" class="inline-form" novalidate>
               <input
                 id="new-project-name"
                 type="text"
                 placeholder="Project name, e.g. HRPortal"
                 autocomplete="off"
-                required
               />
               <button type="submit" class="btn btn-teal">Create project</button>
             </form>
@@ -81,149 +80,449 @@
 
         <!-- Project dashboard -->
         <section id="view-project" class="view hidden">
-          <div class="panel panel-wide project-toolbar">
-            <form id="rename-form" class="inline-form">
-              <input id="rename-input" type="text" placeholder="Rename this project" autocomplete="off" />
-              <button type="submit" class="btn btn-teal btn-sm">Rename</button>
-            </form>
-            <button id="delete-project-btn" type="button" class="btn btn-danger btn-sm">Delete project</button>
-          </div>
-          <p id="project-toolbar-error" class="error hidden"></p>
+          <nav class="tabs">
+            <button type="button" class="tab-btn active" data-tab="tests">Tests</button>
+            <button type="button" class="tab-btn" data-tab="coverage">Coverage</button>
+            <button type="button" class="tab-btn" data-tab="runs">Runs</button>
+            <button type="button" class="tab-btn" data-tab="review">Review</button>
+            <button type="button" class="tab-btn" data-tab="scan">App Scan</button>
+            <button type="button" class="tab-btn" data-tab="insights">Insights</button>
+            <button type="button" class="tab-btn" data-tab="settings">Settings</button>
+          </nav>
 
-          <details class="panel panel-wide details-panel">
-            <summary>
-              <span class="panel-icon icon-teal">%</span> Environment (.env)
-            </summary>
-            <div class="details-body">
-              <p class="muted">
-                <code>BASE_URL</code> and role credentials for this project. Saved
-                straight to <code>projects/&lt;project&gt;/.env</code> — the same
-                file every script here reads.
-              </p>
-              <textarea id="env-editor" class="env-textarea" spellcheck="false" rows="8"></textarea>
-              <div class="env-actions">
-                <button id="env-save-btn" type="button" class="btn btn-teal btn-sm">Save .env</button>
-                <span id="env-save-status" class="muted"></span>
-              </div>
-            </div>
-          </details>
-
-          <div id="pending-panel" class="panel panel-wide card-accent card-purple hidden">
-            <div class="panel-head">
-              <h2><span class="panel-icon icon-purple">&#128065;</span> Pending review</h2>
-            </div>
-            <p class="muted">
-              A new test isn't picked up by the regression suite until you approve it here —
-              recording never writes straight to <code>generated-tests/</code>.
-            </p>
-            <div id="pending-list"></div>
-          </div>
-
-          <div class="card-grid">
-            <div class="panel card-accent card-purple">
+          <!-- Tab: Tests (Test Explorer) -->
+          <div id="tab-tests" class="tab-panel">
+            <div class="panel panel-wide">
               <div class="panel-head">
-                <h2><span class="panel-icon icon-purple">⏺</span> Record a new test</h2>
+                <h2><span class="panel-icon icon-teal">▤</span> Test explorer</h2>
               </div>
-              <form id="record-form" class="stacked-form">
-                <label>
-                  Role
-                  <div class="file-row">
-                    <select id="record-role" required></select>
-                    <button id="add-role-btn" type="button" class="btn-plain">+ role</button>
-                  </div>
-                </label>
-                <div id="add-role-row" class="file-row hidden">
-                  <input id="add-role-input" type="text" placeholder="e.g. supervisor" autocomplete="off" />
-                  <button id="add-role-confirm" type="button" class="btn-plain">Add</button>
+              <p class="muted">
+                Every generated test in this project, with its AI-quality score
+                (locator stability, assertion coverage, async handling, BDD
+                structure — computed straight from the spec file, not
+                self-reported) and its most recent run.
+              </p>
+              <div id="tests-filter-bar" class="tests-filter-bar">
+                <input id="tests-filter-search" type="text" placeholder="Search by name…" autocomplete="off" />
+                <select id="tests-filter-role"><option value="">All roles</option></select>
+                <select id="tests-filter-tag"><option value="">All tags</option></select>
+                <select id="tests-filter-status">
+                  <option value="">Any status</option>
+                  <option value="passed">Passed</option>
+                  <option value="failed">Failed</option>
+                  <option value="flaky">Flaky</option>
+                  <option value="none">No runs yet</option>
+                </select>
+                <button id="tests-filter-clear" type="button" class="btn-plain">Clear</button>
+              </div>
+              <div id="tests-table"><p class="muted">Loading…</p></div>
+            </div>
+
+            <div id="test-history-panel" class="panel panel-wide hidden">
+              <div class="panel-head source-panel-head">
+                <h2><span class="panel-icon icon-teal">↻</span> <span id="test-history-title">History</span></h2>
+                <button id="test-history-close" type="button" class="btn-plain">Close</button>
+              </div>
+              <div id="test-history-list"></div>
+            </div>
+          </div>
+
+          <!-- Tab: Coverage -->
+          <div id="tab-coverage" class="tab-panel hidden">
+            <div class="panel panel-wide">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">▦</span> Role coverage matrix</h2>
+              </div>
+              <p class="muted">
+                Which roles have a test for each flow — a quick way to spot a role
+                that's never actually been exercised for a given flow.
+              </p>
+              <div id="coverage-table"><p class="muted">Loading…</p></div>
+            </div>
+          </div>
+
+          <!-- Tab: Runs -->
+          <div id="tab-runs" class="tab-panel hidden">
+            <div class="card-grid">
+              <div class="panel card-accent card-teal">
+                <div class="panel-head">
+                  <h2><span class="panel-icon icon-teal">▶</span> Run tests</h2>
                 </div>
-                <label>
-                  Flow name
-                  <input id="record-flow-name" type="text" placeholder="e.g. validate-visit" autocomplete="off" required />
-                </label>
-                <button type="submit" class="btn btn-purple">Start recording</button>
-              </form>
-              <p class="muted">
-                Opens a real browser for you to click through the flow manually — log
-                in as the role you picked, do the flow, then <strong>close the
-                recorder window</strong> to finish. The recording is enriched into a
-                test automatically once you close it.
-              </p>
+                <form id="run-form" class="stacked-form">
+                  <label>
+                    Scope
+                    <select id="run-scope">
+                      <option value="all">All roles (full suite)</option>
+                      <option value="role">One role</option>
+                      <option value="file">One test file</option>
+                      <option value="tag">By tag</option>
+                    </select>
+                  </label>
+                  <label id="run-role-row" class="hidden">
+                    Role
+                    <select id="run-role"></select>
+                  </label>
+                  <label id="run-file-row" class="hidden">
+                    File
+                    <div class="file-row">
+                      <select id="run-file"></select>
+                      <button id="view-source-btn" type="button" class="btn-plain">View source</button>
+                    </div>
+                  </label>
+                  <label id="run-tag-row" class="hidden">
+                    Tag
+                    <select id="run-tag"></select>
+                  </label>
+                  <label>
+                    Environment
+                    <select id="run-environment">
+                      <option value="">Default</option>
+                    </select>
+                  </label>
+                  <button type="submit" class="btn btn-teal">Run</button>
+                </form>
+              </div>
+
+              <div class="panel card-accent card-teal">
+                <div class="panel-head">
+                  <h2><span class="panel-icon icon-teal">▤</span> Report</h2>
+                </div>
+                <p class="muted">
+                  Opens the HTML report for whatever you most recently ran in this
+                  project.
+                </p>
+                <a id="report-link" href="#" target="_blank" class="btn btn-teal">Open report</a>
+              </div>
             </div>
 
-            <div class="panel card-accent card-teal">
+            <div class="panel panel-wide">
               <div class="panel-head">
-                <h2><span class="panel-icon icon-teal">▶</span> Run tests</h2>
+                <h2><span class="panel-icon icon-teal">↻</span> Recent runs</h2>
               </div>
-              <form id="run-form" class="stacked-form">
-                <label>
-                  Scope
-                  <select id="run-scope">
-                    <option value="all">All roles (full suite)</option>
-                    <option value="role">One role</option>
-                    <option value="file">One test file</option>
-                    <option value="tag">By tag</option>
-                  </select>
-                </label>
-                <label id="run-role-row" class="hidden">
-                  Role
-                  <select id="run-role"></select>
-                </label>
-                <label id="run-file-row" class="hidden">
-                  File
-                  <div class="file-row">
-                    <select id="run-file"></select>
-                    <button id="view-source-btn" type="button" class="btn-plain">View source</button>
-                  </div>
-                </label>
-                <label id="run-tag-row" class="hidden">
-                  Tag
-                  <select id="run-tag"></select>
-                </label>
-                <button type="submit" class="btn btn-teal">Run</button>
-              </form>
-            </div>
-
-            <div class="panel card-accent card-blue">
-              <div class="panel-head">
-                <h2><span class="panel-icon icon-blue">▤</span> Report</h2>
+              <div id="history-list" class="history-list">
+                <p class="muted">No runs yet.</p>
               </div>
-              <p class="muted">
-                Opens the HTML report for whatever you most recently ran in this
-                project.
-              </p>
-              <a id="report-link" href="#" target="_blank" class="btn btn-blue">Open report</a>
             </div>
           </div>
 
-          <details class="panel panel-wide details-panel">
-            <summary>
-              <span class="panel-icon icon-purple">&#129502;</span> Self-heal a broken locator
-            </summary>
-            <div class="details-body">
+          <!-- Tab: Review (record, pending approvals, self-heal) -->
+          <div id="tab-review" class="tab-panel hidden">
+            <div id="pending-panel" class="panel panel-wide card-accent card-teal hidden">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128065;</span> Pending review</h2>
+              </div>
               <p class="muted">
-                A locator failing because a widget got renamed in Studio Pro? Replays that
-                test's original recording against the app right now, finds what the widget's
-                current name is, and proposes a fix for review below — never applied
-                automatically. Needs the test's raw recording still on disk (kept after every
-                enrichment for exactly this).
+                A new test isn't picked up by the regression suite until you approve it here —
+                recording never writes straight to <code>generated-tests/</code>.
               </p>
-              <form id="heal-form" class="stacked-form">
+              <div id="pending-list"></div>
+            </div>
+
+            <div class="card-grid">
+              <div class="panel card-accent card-teal">
+                <div class="panel-head">
+                  <h2><span class="panel-icon icon-teal">⏺</span> Record a new test</h2>
+                </div>
+                <form id="record-form" class="stacked-form" novalidate>
+                  <label>
+                    Role
+                    <div class="file-row">
+                      <select id="record-role"></select>
+                      <button id="add-role-btn" type="button" class="btn-plain">+ role</button>
+                    </div>
+                  </label>
+                  <div id="add-role-row" class="file-row hidden">
+                    <input id="add-role-input" type="text" placeholder="e.g. supervisor" autocomplete="off" />
+                    <button id="add-role-confirm" type="button" class="btn-plain">Add</button>
+                  </div>
+                  <p id="add-role-error" class="error hidden"></p>
+                  <label>
+                    Flow name
+                    <input id="record-flow-name" type="text" placeholder="e.g. validate-visit" autocomplete="off" />
+                  </label>
+                  <p id="record-flow-name-error" class="error hidden"></p>
+                  <button type="submit" class="btn btn-teal">Start recording</button>
+                </form>
+                <p class="muted">
+                  Opens a real browser for you to click through the flow manually — log
+                  in as the role you picked, do the flow, then <strong>close the
+                  recorder window</strong> to finish. The recording is enriched into a
+                  test automatically once you close it.
+                </p>
+              </div>
+
+              <div class="panel card-accent card-teal">
+                <div class="panel-head">
+                  <h2><span class="panel-icon icon-teal">&#128295;</span> Fix an existing test</h2>
+                </div>
+                <p class="muted">
+                  Pick an existing test, then choose how to fix it. Both land in the review
+                  queue above as a proposal — never applied to the real test until you approve.
+                </p>
+                <form id="fix-test-form" class="stacked-form" novalidate>
+                  <label>
+                    Role
+                    <select id="heal-role"></select>
+                  </label>
+                  <label>
+                    Test file
+                    <select id="heal-file"></select>
+                  </label>
+                  <p id="fix-test-error" class="error hidden"></p>
+                  <div class="fix-mode-actions">
+                    <button type="button" id="fix-update-btn" class="btn btn-teal btn-sm">Update (re-record)</button>
+                    <button type="button" id="fix-analyze-btn" class="btn-plain">Analyze &amp; heal locators</button>
+                    <button type="button" id="fix-extend-btn" class="btn-plain">Extend (record more)</button>
+                  </div>
+                  <p class="muted fix-mode-hint">
+                    <strong>Update</strong> — scenario changed? Re-records the whole flow from
+                    scratch and proposes it as a replacement.<br />
+                    <strong>Analyze &amp; heal locators</strong> — scans every locator in the test
+                    against the app right now and proposes fixes only for the ones that no longer
+                    resolve, with a confidence score for each.<br />
+                    <strong>Extend (record more)</strong> — scenario grew new steps at the end?
+                    Runs the existing test's own steps to get to a logged-in starting point, then
+                    the recorder opens already there — you only record the NEW part. The new steps
+                    are spliced in before the closing logout step, never touching the rest of the
+                    test's code.
+                  </p>
+                </form>
+              </div>
+
+              <div class="panel card-accent card-teal">
+                <div class="panel-head">
+                  <h2><span class="panel-icon icon-teal">&#10003;</span> Suggest assertions</h2>
+                </div>
+                <p class="muted">
+                  For an existing test, suggests additional business-outcome assertions it
+                  could check — review-only, never auto-inserted into the file.
+                </p>
+                <form id="assertions-form" class="stacked-form">
+                  <label>
+                    Role
+                    <select id="assertions-role"></select>
+                  </label>
+                  <label>
+                    Test file
+                    <select id="assertions-file"></select>
+                  </label>
+                  <button type="submit" class="btn btn-teal">Suggest assertions</button>
+                </form>
+                <div id="assertions-results"></div>
+              </div>
+
+              <div class="panel card-accent card-teal">
+                <div class="panel-head">
+                  <h2><span class="panel-icon icon-teal">&#128172;</span> Generate a test plan from a description</h2>
+                </div>
+                <p class="muted">
+                  Describe a flow in plain English — produces a BDD plan, grounded only in
+                  widgets the App Scanner has actually found for that role. Unresolved steps
+                  still need recording for real; this isn't a runnable test.
+                </p>
+                <form id="nl-form" class="stacked-form" novalidate>
+                  <label>
+                    Role
+                    <select id="nl-role"></select>
+                  </label>
+                  <label>
+                    Description
+                    <textarea id="nl-description" rows="3" placeholder="e.g. Create a new visit and verify it appears in the list"></textarea>
+                  </label>
+                  <p id="nl-description-error" class="error hidden"></p>
+                  <button type="submit" class="btn btn-teal">Generate plan</button>
+                </form>
+                <div id="nl-results"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: App Scan (Mendix App Scanner) -->
+          <div id="tab-scan" class="tab-panel hidden">
+            <div class="panel panel-wide card-accent card-teal">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128269;</span> Mendix App Scanner</h2>
+              </div>
+              <p class="muted">
+                Logs in as the chosen role, then crawls same-origin links reachable
+                from the post-login page (breadth-first, bounded by the page limit
+                below), snapshotting every real <code>mx-name-*</code> widget found on
+                each page. Grounded in what's actually reachable by clicking things —
+                never a guess at pages/widgets that might exist.
+              </p>
+              <form id="scan-form" class="stacked-form">
                 <label>
                   Role
-                  <select id="heal-role"></select>
+                  <select id="scan-role"></select>
                 </label>
                 <label>
-                  Test file
-                  <select id="heal-file"></select>
+                  Max pages to visit
+                  <input id="scan-max-pages" type="number" min="1" max="50" value="15" />
                 </label>
-                <label>
-                  Failing widget name (bare, e.g. <code>actionButton1</code>)
-                  <input id="heal-widget" type="text" placeholder="e.g. Input_Email" autocomplete="off" required />
-                </label>
-                <button type="submit" class="btn btn-purple">Suggest fix</button>
+                <button type="submit" class="btn btn-teal">Scan now</button>
               </form>
             </div>
-          </details>
+
+            <div id="scan-results" class="panel panel-wide hidden">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128203;</span> Last scan results</h2>
+              </div>
+              <div id="scan-summary" class="muted"></div>
+              <div id="scan-pages"></div>
+            </div>
+          </div>
+
+          <!-- Tab: Insights (performance analytics, regression intelligence, coverage map) -->
+          <div id="tab-insights" class="tab-panel hidden">
+            <div class="panel panel-wide">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128202;</span> Test performance</h2>
+              </div>
+              <p class="muted">
+                Average / P95 / latest duration per test, from real run history. A test
+                flagged <strong>slower</strong> ran &gt;20% above its own average on its
+                most recent run.
+              </p>
+              <div id="performance-table"><p class="muted">Loading…</p></div>
+            </div>
+
+            <div class="panel panel-wide">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#8635;</span> Regression intelligence</h2>
+              </div>
+              <p class="muted">
+                Compares the two most recent full runs (each <code>npx playwright test</code>
+                invocation is one "run") test-by-test — new failures, recovered tests, and
+                ones still failing in both.
+              </p>
+              <div id="regression-summary"><p class="muted">Loading…</p></div>
+            </div>
+
+            <div class="panel panel-wide">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128506;</span> Application coverage map</h2>
+              </div>
+              <p class="muted">
+                Real <code>mx-name-*</code> widgets found by the App Scanner, cross-referenced
+                against widgets actually referenced by that role's generated tests — an
+                honest overlap count, not an estimate. Scan a role first (App Scan tab) to
+                see it here.
+              </p>
+              <div id="coverage-map-table"><p class="muted">Loading…</p></div>
+            </div>
+
+            <div class="panel panel-wide">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128279;</span> Test dependencies</h2>
+              </div>
+              <p class="muted">
+                Declared explicitly per test with a <code>// depends-on: role/file.spec.js</code>
+                comment (comma-separated for more than one) — nothing is inferred, since tests
+                here are independent by design (each logs in/out on its own). Empty until a
+                test actually declares one.
+              </p>
+              <div id="dependencies-table"><p class="muted">Loading…</p></div>
+            </div>
+
+            <div class="panel panel-wide card-accent card-teal">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128274;</span> Authorization boundary scan</h2>
+              </div>
+              <p class="muted">
+                Picks two roles and checks whether any widget that only ever showed up in the
+                higher-privilege role's App Scan is also visible while logged in as the
+                lower-privilege role — a real signal of an exposed action, not a guess. Requires
+                an App Scan already run for both roles (App Scan tab). A widget being visible in
+                the UI doesn't by itself prove the underlying action would execute for that role
+                (Mendix often also enforces this server-side) — treat a finding as something to
+                verify by hand, not a confirmed vulnerability.
+              </p>
+              <form id="auth-boundary-form" class="stacked-form">
+                <label>
+                  Lower-privilege role
+                  <select id="auth-boundary-lower"></select>
+                </label>
+                <label>
+                  Higher-privilege role
+                  <select id="auth-boundary-higher"></select>
+                </label>
+                <button type="submit" class="btn btn-teal">Scan now</button>
+              </form>
+              <p id="auth-boundary-error" class="error hidden"></p>
+              <div id="auth-boundary-results"></div>
+            </div>
+          </div>
+
+          <!-- Tab: Settings -->
+          <div id="tab-settings" class="tab-panel hidden">
+            <div class="panel panel-wide project-toolbar">
+              <form id="rename-form" class="inline-form">
+                <input id="rename-input" type="text" placeholder="Rename this project" autocomplete="off" />
+                <button type="submit" class="btn btn-teal btn-sm">Rename</button>
+              </form>
+              <button id="delete-project-btn" type="button" class="btn btn-danger btn-sm">Delete project</button>
+            </div>
+            <p id="project-toolbar-error" class="error hidden"></p>
+
+            <details class="panel panel-wide collapsible-panel" open>
+              <summary class="panel-head collapsible-summary">
+                <h2><span class="panel-icon icon-teal">%</span> Environments</h2>
+              </summary>
+              <div class="collapsible-body">
+                <p class="muted">
+                  <code>BASE_URL</code> and role credentials. <strong>Default</strong> is
+                  this project's own <code>.env</code>; add named environments (e.g. QA,
+                  Staging) to run the exact same tests against a different app instance —
+                  nothing in the test source changes, only which environment you pick on
+                  the Runs tab.
+                </p>
+                <div class="env-picker-row">
+                  <select id="env-picker"><option value="">Default</option></select>
+                  <button id="env-new-btn" type="button" class="btn-plain">+ environment</button>
+                  <button id="env-delete-btn" type="button" class="btn-plain hidden">Delete this environment</button>
+                </div>
+                <div id="env-new-row" class="file-row hidden">
+                  <input id="env-new-name" type="text" placeholder="e.g. QA" autocomplete="off" />
+                  <button id="env-new-confirm" type="button" class="btn-plain">Create</button>
+                </div>
+                <p id="env-new-error" class="error hidden"></p>
+                <label class="env-reveal-row">
+                  <input id="env-reveal-toggle" type="checkbox" /> Reveal secret values
+                </label>
+                <div id="env-fields" class="env-fields"></div>
+                <details class="env-raw-details">
+                  <summary>Edit as raw text instead</summary>
+                  <textarea id="env-editor" class="env-textarea" spellcheck="false" rows="8"></textarea>
+                </details>
+                <div class="env-actions">
+                  <button id="env-save-btn" type="button" class="btn btn-teal btn-sm">Save</button>
+                  <span id="env-save-status" class="muted"></span>
+                </div>
+              </div>
+            </details>
+
+            <div class="panel panel-wide card-accent card-teal">
+              <div class="panel-head">
+                <h2><span class="panel-icon icon-teal">&#128260;</span> Mendix sessions</h2>
+              </div>
+              <p class="muted">
+                Connects directly to the app's database to check or clear active sessions —
+                a faster alternative to restarting the app in Studio Pro when a stranded
+                session (a failed run, a leftover recorder tab) exhausts the trial license's
+                seat cap. Needs <code>MENDIX_DB_HOST/PORT/NAME/USER/PASSWORD</code> filled in
+                above for the active environment first. <strong>Check now</strong> is
+                read-only; the table/column names it looks for are Mendix's standard ones but
+                unverified against your actual database until you run it.
+              </p>
+              <div class="fix-mode-actions">
+                <button id="sessions-check-btn" type="button" class="btn-plain">Check now</button>
+                <select id="sessions-role"></select>
+                <button id="sessions-reset-role-btn" type="button" class="btn-plain">Clear this role's session</button>
+                <button id="sessions-reset-all-btn" type="button" class="btn btn-danger btn-sm">Clear ALL sessions</button>
+              </div>
+              <p class="muted">Output streams to the log panel below, same as any other action.</p>
+            </div>
+          </div>
 
           <div id="source-panel" class="panel panel-wide hidden">
             <div class="panel-head source-panel-head">
@@ -239,15 +538,6 @@
                 <div class="source-label">Feature (BDD)</div>
                 <pre id="source-feature" class="code-block"></pre>
               </div>
-            </div>
-          </div>
-
-          <div class="panel panel-wide">
-            <div class="panel-head">
-              <h2><span class="panel-icon icon-teal">↻</span> Recent runs</h2>
-            </div>
-            <div id="history-list" class="history-list">
-              <p class="muted">No runs yet.</p>
             </div>
           </div>
 

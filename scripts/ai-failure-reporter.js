@@ -1,12 +1,13 @@
 /**
- * Custom Playwright reporter: on any failed test, sends the error to Groq
- * and prints a plain-English diagnosis instead of leaving a raw Playwright
- * stack trace as the only thing to go on. Runs inline as part of the normal
- * test run — no separate step, no separate UI wiring needed — so it shows
- * up in `npx playwright test` output, CI logs, and the local UI's live log
- * stream (which just captures stdout of the spawned process) equally.
+ * AI failure analysis: sends a failed test's error to Groq and returns a
+ * plain-English diagnosis instead of leaving a raw Playwright stack trace as
+ * the only thing to go on. `analyzeFailure`/`formatAnalysis` are called from
+ * scripts/test-history-reporter.js's onTestEnd (not from a separate reporter
+ * class here) — merged into that one reporter so there's exactly one Groq
+ * call per failure and the analysis gets persisted onto the same history
+ * entry the Tests tab already reads, not just printed and discarded.
  *
- * Inert without GROQ_API_KEY (prints one note instead of failing the run) —
+ * Inert without GROQ_API_KEY (returns an error object instead of throwing) —
  * this is a value-add on top of the real Playwright error, never a
  * replacement for it, and a missing/expired key or a Groq outage must
  * never break the actual test run.
@@ -64,7 +65,7 @@ ${(errorMessage || "").slice(0, 2000)}`;
   }
 }
 
-function formatAnalysis(analysis) {
+export function formatAnalysis(analysis) {
   if (!analysis) return null;
   if (analysis.error) return `\nAI Failure Analysis\n  ${analysis.error}\n`;
   const lines = [
@@ -83,22 +84,4 @@ function formatAnalysis(analysis) {
     "",
   ];
   return lines.join("\n");
-}
-
-export default class AIFailureReporter {
-  async onTestEnd(test, result) {
-    if (result.status !== "failed" && result.status !== "timedOut") return;
-    if (!process.env.GROQ_API_KEY) return;
-
-    const errorMessage = result.errors.map((e) => e.message || String(e)).join("\n");
-    if (!errorMessage) return;
-
-    const analysis = await analyzeFailure({
-      testTitle: test.titlePath().slice(1).join(" › "),
-      filePath: test.location.file,
-      errorMessage,
-    });
-    const formatted = formatAnalysis(analysis);
-    if (formatted) console.log(formatted);
-  }
 }

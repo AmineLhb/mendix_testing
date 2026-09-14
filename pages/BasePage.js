@@ -160,4 +160,55 @@ export class BasePage {
   findApiObject(body, objectType) {
     return (body?.objects || []).find((o) => o.objectType === objectType) ?? null;
   }
+
+  /**
+   * Visual regression check — opt-in, no test calls this yet. Wraps
+   * Playwright's own `expect(page).toHaveScreenshot()`: the FIRST run for a
+   * given `name` writes the baseline PNG to
+   * `generated-tests/<role>/<file>-snapshots/<name>-<platform>.png` and
+   * passes; every run after that fails if the current render differs by
+   * more than playwright.config.js's `expect.toHaveScreenshot.maxDiffPixelRatio`
+   * (2%). To intentionally accept a new baseline after a real UI change,
+   * re-run with `--update-snapshots`.
+   *
+   * Call `await basePage.waitForMendixIdle()` immediately before this so
+   * the screenshot isn't racing an in-flight microflow call — an unsettled
+   * page is the most likely source of a false-positive diff.
+   */
+  async expectVisualMatch(name, options = {}) {
+    const { expect } = await import("@playwright/test");
+    await expect(this.page).toHaveScreenshot(`${name}.png`, options);
+  }
+
+  /**
+   * Accessibility check — opt-in, no generated test calls this yet. Wraps
+   * @axe-core/playwright's AxeBuilder, scanning the CURRENT page state (call
+   * it after waitForMendixIdle() so it's not scanning mid-render markup).
+   * WCAG 2.0/2.1 A+AA is axe-core's own standard default tag set — kept as
+   * the default here too rather than picking a narrower one, since nothing
+   * about this specific app's accessibility target level has been specified;
+   * override via `options.tags` if a project needs something different.
+   *
+   * Throws with every violation's rule id, impact, and a real CSS selector
+   * for at least one offending element (axe-core's own target array) — not
+   * just a pass/fail — so a failure is immediately actionable without a
+   * second tool. Never invents which elements are inaccessible; axe-core's
+   * own DOM analysis is the ground truth here, same "never guess" rule as
+   * everywhere else in this project, just for a different kind of check.
+   *
+   * Usage: await basePage.expectNoAccessibilityViolations();
+   */
+  async expectNoAccessibilityViolations(options = {}) {
+    const { default: AxeBuilder } = await import("@axe-core/playwright");
+    const { tags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"], exclude = [] } = options;
+    let builder = new AxeBuilder({ page: this.page }).withTags(tags);
+    for (const selector of exclude) builder = builder.exclude(selector);
+    const results = await builder.analyze();
+    if (results.violations.length) {
+      const summary = results.violations
+        .map((v) => `- [${v.impact ?? "unknown"}] ${v.id}: ${v.help} (${v.nodes.length} element(s), e.g. ${v.nodes[0]?.target?.join(" ") ?? "?"})`)
+        .join("\n");
+      throw new Error(`${results.violations.length} accessibility violation(s) found:\n${summary}`);
+    }
+  }
 }

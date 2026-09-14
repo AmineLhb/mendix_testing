@@ -2,15 +2,33 @@
   color-scheme: light dark;
 
   --bg: #f6faf9;
-  /* A full solid-teal sidebar background read as a flat color block rather
-     than UI chrome, and clashed with everything else on the page (verified
-     against a screenshot) — back to a dark sidebar with #18a39e used as
-     its accent (active nav, brand icon, status dot), the same pattern
-     every other dashboard-style sidebar in this app already follows. */
-  --sidebar-bg: #042f2e;
-  --sidebar-text: #94a3b8;
-  --sidebar-text-strong: #ffffff;
-  --sidebar-accent: #18a39e;
+  /* Sidebar is now the bright teal, with the dark navy (#042f2e) as its
+     accent/text instead of the other way around — brand icon fill, active
+     nav border, and status dot are all dark-on-teal. --sidebar-text and
+     --sidebar-text-strong were light grays/whites when the sidebar was
+     dark; both had to move to the same dark-navy family to stay readable
+     against the now-light background. */
+  --sidebar-bg: #00a59f;
+  /* Solid, not a low-alpha tint of the accent — a dark navy blended at 80-85%
+     into a mid-brightness teal still reads as "slightly darker teal", not as
+     legible text (verified against a screenshot: WORKSPACE/CURRENT PROJECT
+     labels and the footer status line were nearly unreadable). Full opacity
+     is what actually clears WCAG contrast against --sidebar-bg. */
+  --sidebar-text: #04302e;
+  --sidebar-text-strong: #042f2e;
+  --sidebar-accent: #042f2e;
+  /* Brand icon's glyph sits on --sidebar-accent (dark), not on --sidebar-bg
+     directly, so it stays plain white regardless of what the text tokens
+     above are set to — it would otherwise go dark-on-dark and disappear
+     whenever --sidebar-text-strong is a dark color, as it is now. */
+  --sidebar-icon-text: #ffffff;
+  /* Active-nav row and the "current project" chip: a low-alpha dark tint on
+     top of a mid-brightness teal barely differs from the sidebar itself
+     (verified against a screenshot — both read as a slightly darker teal
+     blob, not a clear "this one is selected" state). A solid white card
+     reads unambiguously against the teal instead. */
+  --sidebar-highlight-bg: #ffffff;
+  --sidebar-highlight-text: var(--sidebar-accent);
   --panel-bg: #ffffff;
   --panel-border: #ddebe8;
   --text: #16302b;
@@ -18,18 +36,9 @@
   --log-bg: #020617;
   --log-text: #ccfbf1;
 
-  /* Primary — Core Teal. Matches --sidebar-bg exactly (both #18a39e) so the
-     sidebar and the buttons/cards/accents throughout the rest of the app
-     read as one consistent brand teal, not two slightly different ones. */
+  /* Primary — Core Teal. */
   --teal: #18a39e;
-  --teal-dark: #0f766e;
-  /* Secondary — Blue */
-  --blue: #3b82f6;
-  --blue-dark: #1d4ed8;
-  /* AI / Groq accent — Lavender. Reserved for the Record card specifically
-     (the flow that actually invokes Groq), not used as a generic UI accent. */
-  --purple: #a78bfa;
-  --purple-dark: #7c3aed;
+  --teal-dark: #00a59f;
   /* Success / Passed */
   --green: #22c55e;
   --green-dark: #15803d;
@@ -95,7 +104,7 @@ body {
   height: 26px;
   border-radius: 6px;
   background: var(--sidebar-accent);
-  color: var(--sidebar-bg);
+  color: var(--sidebar-icon-text);
   font-weight: 800;
   font-size: 0.85rem;
   display: flex;
@@ -136,12 +145,16 @@ body {
 
 .side-nav-item.active {
   border-left-color: var(--sidebar-accent);
-  color: var(--sidebar-text-strong);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--sidebar-highlight-text);
+  background: var(--sidebar-highlight-bg);
+  border-radius: 0 5px 5px 0;
+  font-weight: 700;
 }
 
-.side-nav-item:hover {
+.side-nav-item:hover:not(.active) {
   color: var(--sidebar-text-strong);
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 0 5px 5px 0;
 }
 
 .side-nav-icon {
@@ -151,16 +164,17 @@ body {
 }
 
 .side-current {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(4, 47, 46, 0.2);
   padding-top: 1rem;
 }
 
 .side-current-name {
   padding: 0.4rem 0.6rem;
   border-left: 3px solid var(--sidebar-accent);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--sidebar-text-strong);
-  font-weight: 600;
+  background: var(--sidebar-highlight-bg);
+  color: var(--sidebar-highlight-text);
+  border-radius: 0 5px 5px 0;
+  font-weight: 700;
   font-size: 0.88rem;
   word-break: break-word;
 }
@@ -299,6 +313,49 @@ main#app {
   gap: 0.5rem;
 }
 
+/* A panel that's a <details> element instead of a plain <div> — collapsible
+   so a long card (Environments, with its per-role fields) doesn't have to
+   dominate the whole page. Same .panel look either way; only the summary/
+   marker handling differs from a plain panel-head. */
+.collapsible-summary {
+  cursor: pointer;
+  list-style: none; /* replace the browser's default marker with our own chevron below */
+}
+
+.collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-summary h2 {
+  position: relative;
+  padding-right: 1.5rem;
+}
+
+.collapsible-summary h2::after {
+  content: "";
+  position: absolute;
+  right: 0.15rem;
+  top: 50%;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-65%) rotate(45deg);
+  transition: transform 0.15s ease;
+}
+
+.collapsible-panel[open] > .collapsible-summary h2::after {
+  transform: translateY(-35%) rotate(-135deg);
+}
+
+.collapsible-summary:hover h2::after {
+  border-color: var(--teal-dark);
+}
+
+.collapsible-panel .collapsible-body {
+  margin-top: 0.6rem;
+}
+
 .panel-icon {
   display: inline-flex;
   align-items: center;
@@ -311,22 +368,12 @@ main#app {
   flex-shrink: 0;
 }
 
-/* The "-dark" shade of each hue, not the lighter primary one — these badges
-   carry small white glyph text (.panel-icon { color: #fff }), and the
-   lighter shades don't contrast enough with white (verified: --purple vs
-   white is ~2.7:1, well under WCAG AA's 4.5:1 for text this size; the
-   "-dark" variants clear 5:1+). AI/Groq accent (purple) stays scoped to the
-   Record card only (see the --purple comment above). */
-.icon-purple {
-  background: var(--purple-dark);
-}
-
+/* The "-dark" shade, not the lighter primary one — these badges carry small
+   white glyph text (.panel-icon { color: #fff }), and the lighter shade
+   doesn't contrast enough with white (verified: --teal vs white is ~2.9:1,
+   under WCAG AA's 4.5:1 for text this size; --teal-dark clears 5:1+). */
 .icon-teal {
   background: var(--teal-dark);
-}
-
-.icon-blue {
-  background: var(--blue-dark);
 }
 
 .card-grid {
@@ -347,16 +394,8 @@ main#app {
   flex-direction: column;
 }
 
-.card-purple {
-  border-top-color: var(--purple);
-}
-
 .card-teal {
   border-top-color: var(--teal);
-}
-
-.card-blue {
-  border-top-color: var(--blue);
 }
 
 .muted {
@@ -401,7 +440,7 @@ main#app {
 .project-card:hover {
   border-color: var(--teal-dark);
   border-left-color: var(--teal-dark);
-  background: rgba(15, 118, 110, 0.06);
+  background: rgba(0, 165, 159, 0.06);
 }
 
 .project-card .name {
@@ -464,6 +503,61 @@ select:focus {
   outline-offset: 1px;
 }
 
+/* Client-side (not HTML `required`) field validation state — see app.js's
+   requireField/showFieldError. */
+input.input-invalid,
+select.input-invalid,
+textarea.input-invalid {
+  border-color: var(--red);
+}
+
+input.input-invalid:focus,
+select.input-invalid:focus,
+textarea.input-invalid:focus {
+  outline-color: var(--red);
+}
+
+/* ---- Confirmation modal (replaces native confirm() — see app.js's confirmAction()) ---- */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 47, 46, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+}
+
+.confirm-modal {
+  background: var(--panel-bg);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(4, 47, 46, 0.3);
+}
+
+.confirm-modal h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.confirm-modal p {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
 /* ---- Buttons ---- */
 
 .btn {
@@ -494,16 +588,8 @@ select:focus {
   filter: none;
 }
 
-.btn-purple {
-  background: var(--purple-dark);
-}
-
 .btn-teal {
   background: var(--teal-dark);
-}
-
-.btn-blue {
-  background: var(--blue-dark);
 }
 
 /* ---- Terminal / log ---- */
@@ -568,6 +654,316 @@ select:focus {
 
 .result-badge.fail {
   background: var(--red-dark);
+}
+
+/* ---- Project tabs (Tests / Coverage / Runs / Review / Settings) ---- */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 0.25rem;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--teal-dark);
+  border-bottom-color: var(--teal-dark);
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ---- Test explorer table ---- */
+
+.tests-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.tests-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.tests-table td {
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--panel-border);
+  vertical-align: middle;
+}
+
+.tests-table .test-name {
+  font-weight: 700;
+}
+
+.tests-table .test-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.tag-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(24, 163, 158, 0.12);
+  color: var(--teal-dark);
+}
+
+.quality-bar-track {
+  width: 72px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-border);
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.4rem;
+}
+
+.quality-bar-fill {
+  height: 100%;
+  background: var(--green);
+}
+
+.quality-bar-fill.mid {
+  background: var(--amber);
+}
+
+.quality-bar-fill.low {
+  background: var(--red);
+}
+
+.status-chip {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.status-chip.passed {
+  background: var(--green-dark);
+}
+
+.status-chip.failed,
+.status-chip.timedOut {
+  background: var(--red-dark);
+}
+
+.status-chip.none {
+  background: var(--muted);
+}
+
+.flaky-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--amber-dark);
+  margin-left: 0.4rem;
+}
+
+.negative-path-badge {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+  width: fit-content;
+}
+
+.negative-path-badge.npc-none {
+  color: var(--red-dark);
+}
+
+.negative-path-badge.npc-low {
+  color: var(--amber-dark);
+}
+
+.negative-path-badge.npc-good {
+  color: var(--teal-dark);
+}
+
+.test-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.test-actions .btn-plain {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+/* ---- Test explorer filter bar ---- */
+
+.tests-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.tests-filter-bar input,
+.tests-filter-bar select {
+  font-size: 0.85rem;
+}
+
+.tests-filter-bar input {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ---- Environments (Settings tab) ---- */
+
+.env-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.env-picker-row select {
+  flex: 1;
+  max-width: 220px;
+}
+
+/* ---- Env fields (masked secrets) ---- */
+
+.env-reveal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0.5rem 0;
+}
+
+.env-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.env-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.env-field-row input {
+  flex: 1;
+  font-family: "SF Mono", Consolas, "Cascadia Code", monospace;
+}
+
+.env-raw-details {
+  margin-bottom: 0.5rem;
+}
+
+.env-raw-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.env-raw-details summary:hover {
+  color: var(--teal-dark);
+}
+
+/* ---- App Scanner ---- */
+
+.scan-page {
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.scan-page summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.scan-widget-list {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+/* ---- Coverage matrix ---- */
+
+.coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.coverage-table th,
+.coverage-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--panel-border);
+  text-align: center;
+}
+
+.coverage-table th:first-child,
+.coverage-table td:first-child {
+  text-align: left;
+  font-weight: 700;
+}
+
+.coverage-yes {
+  color: var(--green-dark);
+  font-weight: 800;
+}
+
+.coverage-no {
+  color: var(--panel-border);
+}
+
+/* ---- Per-test history list ---- */
+
+.test-history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+
+.test-history-row .history-time {
+  margin-left: auto;
 }
 
 /* ---- Project toolbar (rename / delete) ---- */
@@ -736,6 +1132,14 @@ select:focus {
   border-radius: 6px;
   padding: 1rem;
   margin-top: 0.75rem;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Briefly marks the pending item a just-finished record/heal job landed —
+   see app.js's jumpToPendingItem(). */
+.pending-item-flash {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(24, 163, 158, 0.25);
 }
 
 .pending-item-head {
@@ -757,7 +1161,7 @@ select:focus {
   letter-spacing: 0.04em;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
-  background: var(--purple-dark);
+  background: var(--teal-dark);
   color: #fff;
 }
 
@@ -775,6 +1179,18 @@ select:focus {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+/* ---- Fix an existing test (Update / Analyze & heal) ---- */
+
+.fix-mode-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fix-mode-hint {
+  line-height: 1.5;
 }
 
 /* ---- Recent runs ---- */

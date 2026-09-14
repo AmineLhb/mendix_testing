@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { BasePage } from '../../../../pages/BasePage.js';
+import { submitLogin, submitLoginExpectingFailure } from '../../../../steps/business-steps.js';
 
 // Hand-authored rather than recorded/enriched, mirroring
 // generated-tests/collaborateur/login.spec.js — same login page/widgets,
@@ -22,22 +23,15 @@ test.describe('Login (admin)', { tag: '@smoke' }, () => {
     const basePage = new BasePage(page);
 
     await test.step('Given the user is on the login page', async () => {
-      await page.goto('http://localhost:8080/');
+      await page.goto('/');
     });
 
     let status, body;
     await test.step('When they submit valid admin credentials', async () => {
-      await basePage.mx('textBox1').fill(process.env.MENDIX_TEST_USERNAME_ADMIN ?? '');
-      await basePage.mx('textBox2').fill(process.env.MENDIX_TEST_PASSWORD_ADMIN ?? '');
-
-      // Capture the real API response, not just the resulting DOM — a click can
-      // trigger several /xas/ calls in sequence; matchBody waits for the one
-      // that actually carries the post-login session payload (roles/user),
-      // not the login action's own near-empty response.
-      ({ status, body } = await basePage.captureApiResponse(
-        () => basePage.mx('actionButton1').click(),
-        { matchBody: (b) => 'roles' in b }
-      ));
+      ({ status, body } = await submitLogin(basePage, {
+        username: process.env.MENDIX_TEST_USERNAME_ADMIN,
+        password: process.env.MENDIX_TEST_PASSWORD_ADMIN,
+      }));
     });
 
     await test.step('Then they log in as the Administrator role and land on the admin console home page', async () => {
@@ -67,14 +61,11 @@ test.describe('Login (admin)', { tag: '@smoke' }, () => {
     const basePage = new BasePage(page);
 
     await test.step('Given the user is on the login page', async () => {
-      await page.goto('http://localhost:8080/');
+      await page.goto('/');
     });
 
     await test.step('When they submit an incorrect password', async () => {
-      await basePage.mx('textBox1').fill(process.env.MENDIX_TEST_USERNAME_ADMIN ?? '');
-      await basePage.mx('textBox2').fill('this-is-not-the-right-password');
-      await basePage.mx('actionButton1').click();
-      await basePage.waitForMendixIdle();
+      await submitLoginExpectingFailure(basePage, process.env.MENDIX_TEST_USERNAME_ADMIN, 'this-is-not-the-right-password');
     });
 
     await test.step('Then an error message is shown and the user stays on the login page', async () => {

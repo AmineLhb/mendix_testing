@@ -11,7 +11,7 @@ test('visit app and validate form', async ({ page }) => {
   const basePage = new BasePage(page);
 
   await test.step('Given the user is on the login page', async () => {
-    await page.goto('http://localhost:8080/');
+    await page.goto('/');
     await basePage.waitForMendixIdle();
   });
 

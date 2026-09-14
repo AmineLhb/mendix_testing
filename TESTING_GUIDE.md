@@ -5,12 +5,20 @@ record a manual test pass once, turn it into real test code, run that one
 test, then run the full regression suite. For the "why" behind each piece,
 see [README.md](README.md).
 
-**Prefer clicking over typing?** `npm run ui` opens a browser UI with
-buttons for all of this — project picker, record, run (by role, file, or
-tag), cancel a running job, add a role on the fly, self-heal a broken
-locator, a "recent runs" history, a source viewer for any generated
-`.spec.js`/`.feature` pair, an in-page `.env` editor, and rename/delete
-per project — see the "UI" section in [README.md](README.md#ui).
+**Prefer clicking over typing?** `npm run ui` opens a browser UI, organized
+into seven tabs per project: **Tests** (every generated test with its
+quality score, latest pass/fail, and flaky flag — see [Test explorer,
+quality score, and flaky
+detection](#test-explorer-quality-score-and-flaky-detection) below),
+**Coverage** (role × flow matrix), **Runs** (run by role/file/tag, recent
+runs, the report link), **Review** (record a new test, fix an existing one,
+and the pending-approval queue — see [Fixing an existing
+test](#fixing-an-existing-test-update-analyze-extend) below), **App Scan**
+(crawl the app as a given role), **Insights** (performance trends,
+regression intelligence, the coverage map, and the [authorization boundary
+scan](#authorization-boundary-scan)), and **Settings** (`.env` editor,
+[Mendix sessions](#resetting-stuck-mendix-sessions), rename/delete).
+See the "UI" section in [README.md](README.md#ui).
 Recording through the UI always goes through the [pending-review
 queue](#reviewing-an-ai-generated-test-before-it-counts) below rather
 than writing straight to `generated-tests/`. Everything below is the
@@ -142,7 +150,7 @@ AI-enriched output) plus three actions:
   recording without re-recording, useful if the first AI pass looked off
   and you just want another attempt.
 
-The same review queue is also where a [self-healing fix](#self-healing-a-broken-locator)
+The same review queue is also where a [fix, update, or extend proposal](#fixing-an-existing-test-update-analyze-extend)
 proposal shows up — approving one patches the existing test in place
 instead of creating a new file.
 
@@ -371,40 +379,287 @@ actual Playwright error/screenshot/HTML report are unchanged. Silently
 prints nothing extra if `GROQ_API_KEY` isn't set or the Groq call fails,
 so a missing key or an outage never breaks the actual test run.
 
-## Self-healing a broken locator
+## Fixing an existing test: Update / Analyze / Extend
 
-When a test starts failing because a widget got renamed or moved (not a
-real app bug), `scripts/heal.js` can propose a fix — grounded in a real
-replay of the app right now, the same principle every locator in this
-project is built on, **never** a guessed rename:
+The UI's Review tab has one card — **"Fix an existing test"** — for every
+way an existing test can need attention, and the CLI has a matching
+command for each. All three are grounded the same way as everything else
+in this project: **never a guessed locator, always a real replay of the
+app right now.** None of them require the test's original raw recording
+to still exist — they replay the test's own current code, which already
+knows how to get where it needs to go (`scripts/replay-widgets.js`'s
+`replaySpecAndSnapshotWidgets()`/`runSpecUpToLogout()`, shared by all
+three modes plus `enrich.js`'s replay engine for brand-new recordings).
+
+**Update (re-record)** — the scenario itself changed, so record it again
+from scratch:
 
 ```bash
-node scripts/heal.js <role> <flow-name> <old-widget-name> --project <project>
+npm run new-test -- <role> <flow-name> --update
 ```
 
-or the UI's **Self-heal a broken locator** panel (role + test file + the
-failing widget's bare name, e.g. `Input_Email`). What it does:
+Opens the recorder like a brand-new recording, but the result diffs
+against the *current* `generated-tests/` content (not a raw recording) so
+the reviewer sees old code vs. new code. Also refreshes
+`raw-<role>-<flow-name>.spec.js` as a side effect.
 
-1. Replays that test's *original raw recording* (still on disk at
-   `explorer/raw-<role>-<flow-name>.spec.js` — kept after enrichment for
-   exactly this) against the app **right now**, using the same
-   replay-and-snapshot mechanism `enrich.js` uses for generation
-   (`scripts/replay-widgets.js`, shared by both).
-2. Asks the model to pick the most likely replacement **only from
-   widgets that genuinely exist in that live snapshot** — it's explicitly
-   told not to invent one, and to say so honestly (low confidence) rather
-   than guess if nothing matches.
-3. Writes a "fix" proposal to the same [pending review
-   queue](#reviewing-an-ai-generated-test-before-it-counts) as a new
-   test — a before/after diff plus the old→new widget names, confidence,
-   and reasoning. Nothing is ever applied automatically; approving it
-   patches the existing `generated-tests/<role>/<flow-name>.spec.js` in
-   place.
+**Analyze & heal locators** — one or more locators in an otherwise-fine
+test stopped resolving (a widget got renamed in Studio Pro):
 
-Requires the original raw recording to still exist — a hand-authored
-test (like this project's `login.spec.js` files, which were written
-directly rather than recorded) has nothing to replay, so healing isn't
-available for those; re-recording the flow is the fallback.
+```bash
+node scripts/heal-scan.js <role> <flow-name> --project <project>
+```
+
+Runs the test's own steps against the app right now, collects every
+`mx-name-*` widget that's actually visible at each point, and checks
+every `mx('...')` the test references against that real list. A broken
+locator only gets a proposed replacement when the model finds a confident
+match among the *currently visible* widgets (`CONFIDENCE_THRESHOLD` in
+`scripts/heal-scan.js`, currently 50) — anything below that is reported as
+unresolved rather than guessed, so a low-confidence "fix" can't silently
+turn a passing test into a wrong one.
+
+**Extend (record more)** — the scenario grew new steps at the end:
+
+```bash
+npm run new-test -- <role> <flow-name> --extend
+```
+
+Runs the test's own existing steps to reach a logged-in starting point
+(stopping right before its closing "log out" step), then opens the
+recorder already there — record only the *new* part and close the window.
+The new step(s) are enriched separately and spliced deterministically
+(no AI involved in the splice itself) into the existing spec, right
+before its closing logout step — the model is never asked to reproduce
+the whole file, which is exactly the kind of large-scale regeneration
+that risks silently corrupting a test that was already passing. Only
+supports a single-scenario spec (one `test()`, not a `test.describe` with
+several) — continue from that flow's own file directly if it's part of a
+`describe` block.
+
+All three write to the same [pending review
+queue](#reviewing-an-ai-generated-test-before-it-counts) as a brand-new
+test — nothing is ever applied automatically; approving a proposal
+patches (Analyze, Extend) or replaces (Update) the existing
+`generated-tests/<role>/<flow-name>.spec.js`.
+
+## Multiple environments
+
+A project's own `projects/<project>/.env` is always the **Default**
+environment. Add a named one (QA, Staging, whatever) from the UI's
+Settings tab (**+ environment**) — pre-filled with `BASE_URL`, the default
+`MENDIX_TEST_USERNAME`/`PASSWORD` pair, and the `MENDIX_DB_*` fields (see
+[Resetting stuck Mendix sessions](#resetting-stuck-mendix-sessions)); add
+a role-specific suffixed pair by hand once that role's tests actually need
+this environment. Saved to
+`projects/<project>/environments/<envName>.env` (gitignored, same as
+`.env`). Pick which one to run against from the Runs tab's **Environment**
+selector, or on the CLI:
+
+```bash
+MENDIX_ENV=QA MENDIX_PROJECT=<project> npm test
+```
+
+The test source never changes between environments — every generated test
+navigates with a relative `page.goto('/')`, which Playwright resolves
+against whichever `BASE_URL` got loaded. (If you have hand-authored specs
+predating 2026-09-10 with a hardcoded `page.goto('http://...')`, switch
+those to `page.goto('/')` too — a literal URL always wins over
+whichever environment you picked, silently.)
+
+## Resetting stuck Mendix sessions
+
+Besides waiting for a stranded session to time out or restarting the app
+in Studio Pro (see the [seat-limit known
+issue](README.md#known-issue-local-studio-pro-license-seat-limit)), you can
+connect directly to the app's own database and clear session rows there —
+much faster, and can target just one role without touching anyone else's
+session:
+
+```bash
+npm run reset-sessions                          # read-only — what's there right now
+npm run reset-sessions -- --describe             # same, plus the full column-level detail
+npm run reset-sessions -- --all --yes            # clear every session
+npm run reset-sessions -- --role medecin --yes   # clear just medecin's session
+```
+
+Or from the UI: Settings tab > **Mendix sessions** — **Check now** is the
+read-only report, **Clear this role's session** / **Clear ALL sessions**
+do the same as `--role`/`--all` above (with a confirmation modal first).
+Needs `MENDIX_DB_HOST/PORT/NAME/USER/PASSWORD` filled in for the active
+environment first (a brand-new environment's template now includes these,
+`HOST`/`PORT` pre-filled with the usual local defaults — the real values
+for a local Studio Pro run are in Studio Pro's App Settings >
+Configurations > (active config) > Database; the "Built-in database"
+option is an embedded, single-process HSQLDB that no external tool
+(including this one) can reach while the app is running — this only
+works once the app is pointed at a real PostgreSQL, local or otherwise).
+Run the plain read-only check first before either delete mode.
+
+**This also runs automatically**, not just as a manual command, whenever
+`MENDIX_DB_*` is configured for the active project/environment:
+
+- **Once, before a run starts** (`playwright.config.js`'s `globalSetup`,
+  `scripts/global-setup.js`) — clears whatever's stranded from a previous
+  run/crash/manual browser tab.
+- **After every individual test attempt** (`scripts/test-history-reporter.js`'s
+  `onTestEnd`, including each retry) — clears seat pressure that builds up
+  *during* a long run, which the once-per-run clear alone can't catch;
+  prints `[session-clear after <role>/<file>] ...` so it's visible in the
+  run log, not silent.
+
+Both layers silently no-op (not a hard failure) when `MENDIX_DB_*` isn't
+configured — this is a best-effort mitigation on top of the app-level ones
+(`workers: 1`, `retries: 1`, every test's own `logout()`), not something a
+run should ever hard-fail over.
+
+## Visual regression (opt-in)
+
+`basePage.expectVisualMatch(name)` wraps Playwright's own
+`toHaveScreenshot()` — the first call for a given `name` writes a baseline
+PNG next to the spec (`generated-tests/<role>/<file>-snapshots/`), every
+call after that fails if the render differs by more than 2%
+(`playwright.config.js`'s `maxDiffPixelRatio`). No generated test calls it
+automatically; add it to a `test.step` when you want a layout/style
+regression check, right after `waitForMendixIdle()` so it isn't racing an
+in-flight microflow call. Accept an intentional UI change with
+`npx playwright test --update-snapshots`.
+
+## Accessibility checks (opt-in)
+
+`basePage.expectNoAccessibilityViolations()` wraps `@axe-core/playwright`,
+scanning the current page state against axe-core's own default WCAG
+2.0/2.1 A+AA rule set. Same opt-in shape as visual regression above — no
+generated test calls it automatically, it's there to add to a `test.step`
+when you want it:
+
+```js
+await basePage.waitForMendixIdle();
+await basePage.expectNoAccessibilityViolations();
+```
+
+Throws with every violation's rule id, impact, and a real CSS selector —
+not just pass/fail — so a failure is immediately actionable. Override the
+rule set via `await basePage.expectNoAccessibilityViolations({ tags: [...] })`
+if a project needs something other than WCAG A+AA.
+
+## Cross-browser coverage (opt-in)
+
+Runs are Chromium-only by default — deliberately, since the trial Mendix
+license's seat cap means every extra browser project multiplies login
+volume against that same cap. Turn on Firefox/WebKit alongside it via
+`MENDIX_TEST_BROWSERS` (comma-separated):
+
+```bash
+MENDIX_TEST_BROWSERS=chromium,firefox npx playwright test admin/
+```
+
+Not recommended against a trial-licensed local instance for the reason
+above; safe once `BASE_URL` points at a non-trial environment.
+
+## Authorization boundary scan
+
+In the **Insights** tab, alongside performance/regression/coverage data.
+Compares two roles' already-captured [App Scans](#mendix-app-scanner) and
+flags any widget that only ever showed up in the higher-privilege role's
+scan but is also visible while logged in as the lower-privilege role —
+grounded in a real browser session, same as everything else here, never a
+guess. Run the App Scanner for both roles first.
+
+```bash
+node scripts/auth-boundary-scan.js <lowerRole> <higherRole> --project <project>
+```
+
+Guards against a real false-positive trap: most widgets in a Mendix app
+still carry Studio Pro's auto-generated default name (`container10`,
+`actionButton3`, ...), which collide across completely unrelated pages
+all the time. A default-named widget only counts as a match when its
+visible *text* also matches — a default-named widget with no text at all
+is skipped outright as unreliable to compare, rather than guessed about.
+
+A finding means the widget is exposed in the DOM, not a confirmed
+exploit — Mendix commonly also enforces access server-side on the
+microflow/entity itself, so treat a finding as something to verify by
+hand, not an automatically-confirmed vulnerability.
+
+## Mendix App Scanner
+
+```bash
+node scripts/scan-app.js <role> [--project <project>] [--max-pages N]
+```
+
+or the UI's **App Scan** tab. Logs in as `<role>` once, then explores
+same-origin navigation-like widgets reachable from the landing page
+(real `<a>` tags, or anything with `role=menuitem`/`role=button` and a
+pointer cursor), snapshotting every real `mx-name-*` widget found on each
+distinct page — up to `--max-pages` (default 15). Saves
+`projects/<project>/explorer/app-scan/<role>.json`.
+
+Deliberately ONE login for the whole scan (returns to the starting nav via
+the browser's own back-navigation between clicks) rather than one per page
+— this project already treats login volume as a real cost against the
+trial license's seat cap (see [Known
+issue](README.md#known-issue-local-studio-pro-license-seat-limit)), and a
+scanner that logged in per page would make that worse. The tradeoff: if a
+given Mendix app's client routing doesn't support real back-navigation,
+the crawl notices (the starting nav is gone after going back) and stops
+early rather than continuing on a guess. Not a Studio Pro project scanner
+— it has no access to your app's pages/microflows/entities at the project
+level, only what an actual logged-in browser session can see.
+
+## Reusable business steps
+
+`steps/business-steps.js` holds an action sequence shared by multiple
+specs instead of duplicated in each — right now, the login flow every
+role's `login.spec.js` used to write out by hand. Import and call it from
+inside your own `test.step()`:
+
+```js
+import { submitLogin } from '../../../../steps/business-steps.js';
+
+await test.step('Given I am authenticated as <role>', async () => {
+  ({ status, body } = await submitLogin(basePage, { username, password }));
+});
+```
+
+Keep the BDD label directly in the `.spec.js` file (don't move the
+`test.step()` wrapper itself into the shared module) — `scripts/gherkin.js`
+scans literal `test.step(` calls in the spec to derive the `.feature` doc,
+and a label hidden inside an imported function won't be found.
+
+## Test explorer, quality score, and flaky detection
+
+The UI's **Tests** tab lists every generated test in the project — role,
+flow, tags, an AI quality score, and its most recent result — derived
+entirely from what's actually on disk plus what actually ran, never a
+separate thing to keep in sync:
+
+- **Quality score** (`scripts/confidence.js`'s `scoreTestQuality()`) is
+  deterministic, not an LLM call — it inspects the spec file itself for
+  locator stability (`mx()` calls vs. raw `page.locator()`), assertion
+  coverage, fixed-wait usage (`waitForTimeout()` costs points;
+  `waitForMendixIdle()` doesn't), and BDD structure (do `test.step()`
+  labels actually start with Given/When/Then). Shown for every test in the
+  Tests tab, and for a pending proposal (new test or self-healing fix)
+  before you approve it.
+- **Per-test history** (`scripts/test-history-reporter.js`, a Playwright
+  reporter wired into `playwright.config.js`) appends one entry — status,
+  duration, and a link to the failure screenshot Playwright already
+  captures (`screenshot: "only-on-failure"`) — to
+  `projects/<project>/test-history.json` after every test, every run.
+  Click **History** on any row in the Tests tab to see the last 20 runs
+  and open a failure screenshot directly.
+- **Flaky detection** is read directly off that history: a test whose
+  recent runs are a genuine *mix* of pass and fail (not simply always
+  failing) is flagged with its failure rate. Needs at least 3 runs before
+  it says anything. A flaky login test is usually the known [license
+  seat-cap race](README.md#known-issue-local-studio-pro-license-seat-limit),
+  not a real bug — the flag is there to make that visible over time, not
+  to imply every flaky result is a code problem.
+- **Coverage tab** is a flow × role grid built from `generated-tests/`
+  directly — which roles actually have a test for a given flow, so a gap
+  like "only collaborateur has create-visit coverage" is visible at a
+  glance instead of needing to browse folders.
 
 ## Quick reference
 
@@ -424,8 +679,15 @@ available for those; re-recording the flow is the fallback.
 | Run only the fast smoke tests (logins, tagged `@smoke`) | `npm run test:smoke` |
 | Run tests by any tag | `npx playwright test --grep @tagname` (or the UI's "By tag" run scope) |
 | Record without writing to `generated-tests/` yet (needs review) | `npm run new-test -- <role> <flow-name> --stage` (what the UI's Record button always does) |
-| Propose a fix for a broken locator | `node scripts/heal.js <role> <flow-name> <old-widget-name>` (or the UI's "Self-heal a broken locator" panel) |
+| Re-record an existing test from scratch | `npm run new-test -- <role> <flow-name> --update` (or the UI's "Update (re-record)") |
+| Scan a whole test for every broken locator, propose confident fixes | `node scripts/heal-scan.js <role> <flow-name>` (or the UI's "Analyze & heal locators") |
+| Continue a scenario that grew new steps | `npm run new-test -- <role> <flow-name> --extend` (or the UI's "Extend (record more)") |
 | Check for missing/incomplete `.env` vars across all projects | `npm run validate:env` |
+| Run against a named environment instead of Default | `MENDIX_ENV=<name>` prefix (or the UI's Environment selector) |
+| Scan the app for reachable pages/widgets | `node scripts/scan-app.js <role> [--max-pages N]` (or the UI's App Scan tab) |
+| Check for cross-role authorization gaps | `node scripts/auth-boundary-scan.js <lowerRole> <higherRole>` (or the Insights tab) |
+| Check / clear stuck Mendix sessions | `npm run reset-sessions [-- --all --yes \| --role <role> --yes]` (or Settings tab > Mendix sessions) |
+| Run the evaluation benchmark | `npm run benchmark` (currently 0 cases — scaffolding only) |
 | Open the UI | `npm run ui` |
 
 ## Optional: recording from an already-logged-in state
@@ -546,8 +808,11 @@ roughly in priority order:
   "skip logout for a test that never logs in" rule already documented in
   `explorer/enrich.js`'s system prompt).
 - **Authorization boundaries.** Does a `collaborateur` get properly
-  blocked from médecin/admin-only pages/actions? Worth a test per role
-  pair where access should be denied, not just where it should succeed.
+  blocked from médecin/admin-only pages/actions? The [authorization
+  boundary scan](#authorization-boundary-scan) gives an automated first
+  pass at this (widget-level exposure, once an App Scan exists for both
+  roles) — worth following up any finding with a real test per role pair
+  where access should be denied, not just where it should succeed.
 - **Field validation.** Required-field errors, invalid date ranges, and
   other form-level validation on the visit creation/edit forms — currently
   only the happy path is covered.

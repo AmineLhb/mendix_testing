@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /**
- * Self-healing, done the same way this project trusts anything else about
- * the app's DOM: never guessed, always replayed. Given a locator that's
- * started failing (e.g. mx-name-Input_Email got renamed to
- * mx-name-Input_EmailAddress in Studio Pro), this does NOT ask the model to
- * pattern-match a plausible-looking new name out of thin air — it replays
- * the test's ORIGINAL raw recording (still on disk from when the test was
- * first created) against the CURRENT live app, using the exact same replay
- * mechanism explorer/enrich.js uses for generation, and only lets the model
- * pick a replacement from widgets that are actually visible right now.
+ * Self-healing, single-widget mode. Same grounding rule as everywhere else
+ * in this project: never guessed, always replayed — but (as of 2026-09-11)
+ * against the EXISTING TEST's own code (replaySpecAndSnapshotWidgets in
+ * scripts/replay-widgets.js), not a separately-kept raw recording.
+ *
+ * Previously this replayed the test's original raw codegen recording
+ * (explorer/raw-<role>-<flow>.spec.js) — a file that's gitignored, not
+ * guaranteed to still be on disk, and redundant: the generated spec.js
+ * already knows exactly how to get to the relevant page, since it's a real,
+ * working Playwright test. If a locator changed, there's no reason to go
+ * looking for it in an old recording instead of just running the test's own
+ * steps against the app right now and seeing what's actually there — see
+ * scripts/heal-scan.js, which this now shares its replay engine with. This
+ * script is the same idea narrowed to one widget name you already know is
+ * broken, instead of scanning the whole file for every broken locator.
  *
  * The result is written as a "fix" proposal to the pending review queue
  * (same place scripts/record-and-enrich.js --stage writes new tests) —
@@ -17,17 +23,13 @@
  *
  * Usage:
  *   node scripts/heal.js <role> <flow-name> <old-widget-name> [--project <name>]
- *
- * Requires: the test's original raw recording still on disk at
- * explorer/raw-<role>-<flow-name>.spec.js (present unless it's been
- * manually deleted — it's gitignored but not removed after enrichment),
- * and the test itself already existing in generated-tests/<role>/.
  */
 import OpenAI from "openai";
 import fs from "node:fs";
 import path from "node:path";
 import { loadProjectEnv, projectPaths, projectExists, writePending } from "./project.js";
-import { replayAndSnapshotWidgets } from "./replay-widgets.js";
+import { replaySpecAndSnapshotWidgets } from "./replay-widgets.js";
+import { scoreTestQuality } from "./confidence.js";
 
 const argv = process.argv.slice(2);
 const projectIdx = argv.indexOf("--project");
@@ -54,12 +56,8 @@ if (!fs.existsSync(specPath)) {
   process.exit(1);
 }
 
-const rawPath = path.join(paths.explorer, `raw-${role}-${flowName}.spec.js`);
-if (!fs.existsSync(rawPath)) {
-  console.error(
-    `Original raw recording not found at ${rawPath} — can't replay to find the current widget map without it. ` +
-      `(It's kept on disk after enrichment specifically so healing can use it later; if it's gone, re-recording the flow is the only option.)`
-  );
+if (!process.env.BASE_URL) {
+  console.error(`BASE_URL not set in ${paths.env} — needed to run the test's own page.goto('/') against the live app.`);
   process.exit(1);
 }
 
@@ -69,9 +67,22 @@ if (!process.env.GROQ_API_KEY) {
 }
 
 async function main() {
-  const rawScript = fs.readFileSync(rawPath, "utf-8");
-  console.log(`Replaying ${rawPath} against the current app to find what "${oldWidget}" was renamed to...`);
-  const replaySteps = await replayAndSnapshotWidgets(rawScript);
+  const currentContent = fs.readFileSync(specPath, "utf-8");
+
+  const mxCallRe = new RegExp(`mx\\('${oldWidget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'\\)`, "g");
+  if (!mxCallRe.test(currentContent)) {
+    console.error(`"${oldWidget}" doesn't actually appear as a mx('${oldWidget}') call in ${specPath} — nothing to replace.`);
+    process.exit(1);
+  }
+
+  console.log(`Running ${role}/${flowName}.spec.js's own steps against the app right now to find what "${oldWidget}" was renamed to...`);
+  const replaySteps = await replaySpecAndSnapshotWidgets(currentContent, { baseUrl: process.env.BASE_URL, specPath });
+
+  const failedSteps = replaySteps.filter((s) => !s.ok);
+  if (failedSteps.length) {
+    console.log(`${failedSteps.length} of ${replaySteps.length} step(s) didn't complete as written:`);
+    for (const s of failedSteps) console.log(`- "${s.step}": ${s.replayError}`);
+  }
 
   const allCurrentWidgets = [];
   const seen = new Set();
@@ -123,18 +134,12 @@ ${JSON.stringify(allCurrentWidgets, null, 2)}`;
 
   if (!result.newWidget) {
     console.log(`No confident replacement found. Reasoning: ${result.reasoning}`);
-    console.log("Nothing written — this needs a human to look at it directly (or re-record the flow).");
+    console.log("Nothing written — this needs a human to look at it directly (or use Update (re-record)).");
     process.exit(2);
   }
 
-  const currentContent = fs.readFileSync(specPath, "utf-8");
   // Only the literal string argument to mx(), not any chained .filter() —
   // preserves whatever disambiguation the original enrichment already added.
-  const mxCallRe = new RegExp(`mx\\('${oldWidget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'\\)`, "g");
-  if (!mxCallRe.test(currentContent)) {
-    console.error(`"${oldWidget}" doesn't actually appear as a mx('${oldWidget}') call in ${specPath} — nothing to replace.`);
-    process.exit(1);
-  }
   const patched = currentContent.replace(mxCallRe, `mx('${result.newWidget}')`);
 
   const id = `${role}-${flowName}-fix`;
@@ -148,6 +153,7 @@ ${JSON.stringify(allCurrentWidgets, null, 2)}`;
     newWidget: result.newWidget,
     confidence: result.confidence,
     reasoning: result.reasoning,
+    quality: scoreTestQuality(patched),
   });
 
   console.log(`Proposed fix: ${oldWidget} -> ${result.newWidget} (confidence: ${result.confidence}%)`);

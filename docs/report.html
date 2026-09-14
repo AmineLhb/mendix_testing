@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>mendix-test-agent — Project Report</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  @page { size: A4; margin: 20mm 16mm 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #1a2b2a;
+    line-height: 1.55;
+    font-size: 10.5pt;
+    margin: 0;
+  }
+  :root {
+    --teal: #00a59f;
+    --teal-dark: #067d78;
+    --teal-pale: #e6f6f5;
+    --ink: #16302e;
+    --muted: #5b6f6d;
+    --border: #d7e6e4;
+  }
+
+  /* ---- Cover page ---- */
+  .cover {
+    min-height: 250mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    page-break-after: always;
+    text-align: center;
+    padding: 0 10mm;
+  }
+  .cover .badge {
+    width: 64px; height: 64px; margin: 0 auto 20px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 28px; font-weight: 800;
+  }
+  .cover h1 {
+    font-size: 30pt; margin: 0 0 6px; color: var(--ink); letter-spacing: -0.5px;
+  }
+  .cover .subtitle {
+    font-size: 13pt; color: var(--teal-dark); font-weight: 600; margin-bottom: 30px;
+  }
+  .cover .tagline {
+    font-size: 11.5pt; color: var(--muted); max-width: 480px; margin: 0 auto 40px;
+  }
+  .cover .meta {
+    font-size: 9.5pt; color: var(--muted); border-top: 1px solid var(--border);
+    padding-top: 14px; max-width: 380px; margin: 0 auto;
+  }
+  .cover .meta div { margin: 3px 0; }
+
+  /* ---- Sections ---- */
+  section { page-break-before: always; padding-top: 4mm; }
+  section:first-of-type { page-break-before: auto; }
+  h2 {
+    font-size: 16pt; color: var(--ink); border-bottom: 2.5px solid var(--teal);
+    padding-bottom: 6px; margin: 0 0 14px;
+  }
+  h3 { font-size: 12.5pt; color: var(--teal-dark); margin: 22px 0 8px; }
+  h4 { font-size: 11pt; color: var(--ink); margin: 14px 0 6px; }
+  p { margin: 0 0 10px; }
+  ul, ol { margin: 0 0 12px; padding-left: 20px; }
+  li { margin-bottom: 5px; }
+  code {
+    background: var(--teal-pale); color: var(--teal-dark); padding: 1px 5px;
+    border-radius: 3px; font-family: "Cascadia Code", Consolas, monospace; font-size: 9.3pt;
+  }
+  .callout {
+    background: var(--teal-pale); border-left: 3px solid var(--teal);
+    padding: 10px 14px; border-radius: 4px; margin: 12px 0; font-size: 9.8pt;
+  }
+  .callout.warn { background: #fff4e6; border-left-color: #d98a1f; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 9.3pt; }
+  th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--teal-pale); color: var(--ink); font-weight: 700; }
+  tr:nth-child(even) td { background: #fafdfd; }
+  .mermaid { text-align: center; margin: 14px 0; }
+  .mermaid svg { max-width: 100% !important; height: auto !important; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card {
+    border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px;
+    background: #fff;
+  }
+  .card h4 { margin-top: 0; color: var(--teal-dark); }
+  .footer-note { font-size: 8.5pt; color: var(--muted); margin-top: 30px; }
+  .tag {
+    display: inline-block; background: var(--teal-pale); color: var(--teal-dark);
+    font-size: 8pt; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin: 0 4px 4px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="badge">M</div>
+  <h1>mendix-test-agent</h1>
+  <div class="subtitle">Record once. AI-enrich. Regress forever.</div>
+  <div class="tagline">
+    An AI-assisted end-to-end testing platform: record a manual test pass once,
+    let an LLM turn it into a maintainable, self-healing automated test, review
+    it like a code change, then run it forever as part of continuous regression.
+  </div>
+  <div class="meta">
+    <div><strong>Project report</strong></div>
+    <div>Generated 2026-09-14</div>
+    <div>Reference implementation target: Mendix low-code applications</div>
+  </div>
+</div>
+
+<section id="summary">
+<h2>1. Executive Summary</h2>
+
+<p>
+<strong>mendix-test-agent</strong> is a browser-testing platform built around one idea:
+the expensive, error-prone part of end-to-end testing isn't clicking through a flow once
+— it's turning that flow into a test that stays correct as the application under test keeps
+changing. This project automates exactly that transition, and then keeps the resulting test
+alive automatically instead of letting it quietly rot.
+</p>
+
+<p>
+A tester records a flow the same way they'd manually test it — logging in, clicking through
+a scenario, no code. An LLM (Groq, OpenAI-compatible) then rewrites that raw recording into
+a real Playwright test: stable locators, explicit assertions inferred from what actually
+happened, proper asynchronous waits instead of fixed sleeps, and BDD-style step labels.
+Every AI-generated change — a brand-new test, a re-recording, or a proposed fix to a broken
+locator — goes through a mandatory human review queue before it ever reaches the real test
+suite. Nothing the AI writes is trusted blindly.
+</p>
+
+<p>
+Beyond generation, the platform actively maintains its own tests: it detects when a locator
+breaks and proposes a grounded fix (never an invented one — always checked against a live
+replay of the real application), diagnoses failures in plain English, scores every test's
+maintainability, flags flaky tests from real run history, and — a genuinely novel piece —
+can reach directly into the application's own database to clear stuck sessions and diagnose
+authorization gaps between user roles.
+</p>
+
+<div class="callout">
+<strong>In one sentence:</strong> it turns "someone tested this once by hand" into
+"this is permanently, automatically re-tested, and the tests fix themselves when the
+application's UI changes underneath them."
+</div>
+</section>
+
+<section id="problem">
+<h2>2. Problem &amp; Value Proposition</h2>
+
+<h3>The problem this solves</h3>
+<ul>
+  <li><strong>Manual regression testing doesn't scale.</strong> Every UI change risks
+  breaking something a human tested once and never re-checks.</li>
+  <li><strong>Hand-written E2E tests are expensive and brittle.</strong> Writing a
+  Playwright test by hand for every flow is slow; the locators it depends on break the
+  moment a widget gets renamed, and someone has to notice, diagnose, and fix it.</li>
+  <li><strong>Low-code platforms change fast and can't be inspected programmatically.</strong>
+  There's no access to a Mendix Studio Pro project's internal model from outside it — the
+  only ground truth available to an external tool is what a real browser session actually
+  renders.</li>
+  <li><strong>Trial/dev licenses impose real operational constraints</strong> (session/seat
+  limits) that most testing tools ignore entirely, and that silently produce false failures
+  if not actively managed.</li>
+</ul>
+
+<h3>Value added</h3>
+<table>
+<tr><th>Without this project</th><th>With this project</th></tr>
+<tr><td>A developer or QA hand-writes each Playwright test, guessing at locators</td>
+    <td>A tester records a flow once by clicking through it; the test is generated from
+    real, replayed DOM state</td></tr>
+<tr><td>A renamed widget silently breaks a test; someone has to notice, open the test,
+    guess the fix</td>
+    <td>The broken locator is detected, a fix is proposed from what's genuinely on the
+    page right now, and a human just approves or rejects it</td></tr>
+<tr><td>A failed test shows a raw stack trace; diagnosing it costs time</td>
+    <td>Every failure gets a plain-English "what happened / likely cause / recommended
+    action" diagnosis alongside the real error</td></tr>
+<tr><td>Test quality/maintainability is subjective, unmeasured</td>
+    <td>Every test gets a deterministic, inspectable quality score (locator stability,
+    assertion coverage, async handling, BDD structure)</td></tr>
+<tr><td>"Is role X blocked from role Y's data?" is answered by manual poking</td>
+    <td>An automated boundary scan compares what each role's browser session can actually
+    see, flags real exposure</td></tr>
+<tr><td>A stuck session/seat-limit issue means restarting the whole app</td>
+    <td>A direct, targeted database-level session reset — seconds, not an app restart</td></tr>
+</table>
+</section>
+
+<section id="stack">
+<h2>3. Technology Stack</h2>
+
+<table>
+<tr><th>Layer</th><th>Technology</th><th>Role in this project</th></tr>
+<tr><td>Browser automation</td><td><strong>Playwright</strong> (+ Playwright Test runner)</td>
+    <td>Records flows (codegen), drives every generated test, powers live-replay
+    verification for locator healing and quality checks</td></tr>
+<tr><td>Runtime / language</td><td><strong>Node.js</strong> (native ESM), plain
+    <strong>JavaScript</strong></td><td>Every script, the UI server, and every generated
+    test — one language across the whole stack</td></tr>
+<tr><td>AI / LLM</td><td><strong>Groq API</strong> (OpenAI-compatible SDK, model
+    <code>openai/gpt-oss-120b</code>)</td>
+    <td>Recording → test rewrite, failure diagnosis, locator-fix suggestion, assertion
+    suggestions, natural-language-to-test-plan generation</td></tr>
+<tr><td>Web UI</td><td><strong>Express</strong> + a hand-rolled vanilla JS/HTML/CSS
+    front end (no framework)</td>
+    <td>Project dashboard, live job streaming (SSE), review/approve workflow, Insights,
+    Settings</td></tr>
+<tr><td>Application database access</td><td><strong>PostgreSQL</strong> (via
+    <code>pg</code>), read directly for diagnostics and session management</td>
+    <td>Live session count/clearing, cross-role authorization comparison, one-off
+    data-migration tooling (HSQLDB → Postgres, built live during this project)</td></tr>
+<tr><td>Containers</td><td><strong>Podman</strong></td>
+    <td>Stood up a local PostgreSQL instance as an alternative to Mendix's built-in,
+    single-process HSQLDB — needed because HSQLDB can't be reached by any external tool
+    while the app is running</td></tr>
+<tr><td>Accessibility</td><td><strong>@axe-core/playwright</strong></td>
+    <td>Opt-in WCAG 2.0/2.1 A+AA scanning of any page state</td></tr>
+<tr><td>CI/CD</td><td><strong>GitHub Actions</strong></td>
+    <td>Runs the full suite on every push/PR/nightly, validates generated tests for
+    leaked secrets, publishes HTML + JUnit reports, posts failures to Slack</td></tr>
+<tr><td>Reporting</td><td>Playwright's own <strong>HTML reporter</strong> +
+    <strong>JUnit XML</strong></td>
+    <td>Per-run reports with a navigable BDD step tree; JUnit for external
+    dashboard/tracker ingestion</td></tr>
+<tr><td>Code quality</td><td><strong>ESLint</strong>, <strong>Prettier</strong>,
+    <strong>Husky</strong> + <strong>lint-staged</strong></td>
+    <td>Pre-commit checks, including a hardcoded-secret scan on every generated test</td></tr>
+</table>
+
+<div class="callout">
+The stack is deliberately minimal — no test framework beyond Playwright itself, no
+frontend framework, no ORM. Every moving part is something the project directly controls
+and can reason about, which matters for a tool whose entire premise is "never guess,
+always verify against something real."
+</div>
+</section>
+
+<section id="architecture">
+<h2>4. System Architecture</h2>
+
+<p>
+The system has four cooperating layers: a thin web UI, a library of CLI scripts that do
+the actual work (and that the UI simply orchestrates), the generated Playwright test suite
+itself, and the application under test — reached two ways: through the browser, like a
+real user, and, for maintenance operations, directly against its database.
+</p>
+
+<div class="mermaid">
+flowchart TB
+  subgraph UI["Web UI - Express + vanilla JS - localhost:4300"]
+    Dash["Project dashboard\nTests / Coverage / Runs / Review\nApp Scan / Insights / Settings"]
+  end
+
+  subgraph Scripts["CLI script library (scripts/, explorer/)"]
+    RE["record-and-enrich.js\nnew / update / extend"]
+    Heal["heal-scan.js\nAnalyze and heal locators"]
+    Scan["scan-app.js\nApp Scanner"]
+    Auth["auth-boundary-scan.js"]
+    DB["reset-mendix-sessions.js"]
+    Reporter["test-history-reporter.js\nai-failure-reporter.js"]
+  end
+
+  subgraph AI["Groq LLM API"]
+    Model["openai/gpt-oss-120b"]
+  end
+
+  subgraph Tests["Generated Playwright suite\nprojects/PROJECT/generated-tests/"]
+    Spec["ROLE/FLOW.spec.js\n+ matching .feature"]
+  end
+
+  subgraph App["Application under test"]
+    Browser["Real browser session\n(what the user sees)"]
+    Database["App database\n(PostgreSQL)"]
+  end
+
+  Dash -->|spawns| Scripts
+  RE -->|raw recording + live DOM snapshot| Model
+  Heal -->|broken locators + live widget list| Model
+  Model -->|generated / fixed test code| RE
+  Model --> Heal
+  RE -->|pending review, human approves| Spec
+  Heal -->|pending review, human approves| Spec
+  Spec -->|drives| Browser
+  Scan -->|crawls as a role| Browser
+  Auth -->|compares App Scans| Scan
+  DB -->|direct SQL| Database
+  Reporter -->|reads run results| Spec
+  Reporter -->|diagnosis via| Model
+</div>
+
+<h3>Key architectural decisions</h3>
+<ul>
+  <li><strong>The UI is a thin wrapper, never the source of truth.</strong> Every button
+  runs the same CLI command a person could type directly — nothing about the underlying
+  scripts changes based on whether they're invoked from a browser or a terminal, which is
+  also why CI uses the CLI path exclusively.</li>
+  <li><strong>Nothing AI-generated is trusted automatically.</strong> A brand-new test, a
+  re-recording, or a locator fix all land in a pending-review queue as a before/after diff.
+  A hardcoded-secret check runs before a proposal can even be approved.</li>
+  <li><strong>Every locator decision is grounded in a live replay, never a guess.</strong>
+  Whether generating a new test or fixing a broken one, the model only ever sees — and is
+  only allowed to choose from — widgets that a real, just-now browser session actually
+  rendered.</li>
+  <li><strong>Multi-project, multi-role, multi-environment by design.</strong> The same
+  installation can test several separate applications, each with its own roles and
+  credentials, each runnable against several named environments (Default, QA, Staging...)
+  with zero test-source changes.</li>
+</ul>
+</section>
+
+<section id="workflow">
+<h2>5. Core Workflow — Record → Enrich → Review → Run</h2>
+
+<p>
+This is the primary path from "someone tested a flow by hand" to "this is a permanent,
+self-maintaining automated test."
+</p>
+
+<div class="mermaid">
+flowchart TD
+  Start([Tester wants to cover a new flow]) --> Record[Record: Playwright codegen\nopens a real browser\ntester logs in and clicks through manually]
+  Record --> Raw[Raw, unpolished recording\ndumb clicks/fills, no assertions]
+  Raw --> Snapshot[Replay the recording once more,\nstep by step, capturing every real\nmx-name-* widget visible at each step]
+  Snapshot --> Enrich{Send recording + live\nwidget snapshot to the AI}
+  Enrich --> Draft[AI drafts a maintainable test:\nstable locators, real assertions,\nMendix-aware waits, BDD step labels]
+  Draft --> SecretCheck{Hardcoded secret\ncheck}
+  SecretCheck -->|fails| Reject[Refused - never written,\nstays in the recording only]
+  SecretCheck -->|clean| Pending[Pending review queue:\nbefore/after diff + quality score]
+  Pending --> Human{Human reviews}
+  Human -->|Reject| Discard[Discarded - raw recording\nkept for a retry]
+  Human -->|Regenerate| Enrich
+  Human -->|Approve| Live[Written to generated-tests/\n+ derived .feature doc]
+  Live --> CI[Runs on every push/PR/nightly\nvia GitHub Actions]
+  CI --> Report[HTML report + JUnit +\nAI failure diagnosis on any failure]
+  Report --> Monitor[Tests tab: quality score,\nflaky detection, pass/fail history]
+</div>
+
+<h3>Self-healing sub-workflow: Update / Analyze / Extend</h3>
+<p>
+Once a test exists, it doesn't just sit there waiting to break. Three grounded maintenance
+paths cover everything that can go wrong with an existing test, all converging on the same
+review queue:
+</p>
+
+<div class="mermaid">
+flowchart LR
+  subgraph Trigger["Something needs fixing"]
+    A["A locator stopped\nresolving (widget renamed)"]
+    B["The whole scenario\nchanged"]
+    C["The scenario grew\nnew steps at the end"]
+  end
+
+  A --> Analyze["Analyze and heal locators\nRun the test's own steps live,\ncollect every real widget seen,\npropose a fix only above a\nconfidence threshold"]
+  B --> Update["Update (re-record)\nRecord the whole flow again;\ndiff against current code,\nnot the old raw recording"]
+  C --> Extend["Extend (record more)\nReplay existing steps to a\nlogged-in point, record only\nthe NEW tail, splice it in\ndeterministically - no AI\nrewrite of the whole file"]
+
+  Analyze --> Queue[(Pending review queue)]
+  Update --> Queue
+  Extend --> Queue
+  Queue --> Approve{Human approves?}
+  Approve -->|yes| Patch[Existing test patched/replaced]
+  Approve -->|no| Nothing[Nothing changes]
+</div>
+
+<div class="callout">
+The <strong>Extend</strong> path is a deliberate design choice worth calling out: instead
+of asking the AI to reproduce an entire file (risking a subtle corruption of code that was
+already passing), only the new tail is AI-generated, and it's spliced into the existing
+file by plain, deterministic text manipulation — the model never touches the parts of the
+file that already worked.
+</div>
+</section>
+
+<section id="ai-flow">
+<h2>6. How the AI Generation Actually Works</h2>
+
+<div class="mermaid">
+sequenceDiagram
+  participant T as Tester
+  participant PW as Playwright (headless replay)
+  participant App as Live application
+  participant LLM as Groq LLM
+
+  T->>PW: npm run new-test -- role flow
+  PW->>App: Open recorder, tester logs in and clicks
+  App-->>PW: Raw recorded actions
+  PW->>App: Replay every action, one line at a time
+  App-->>PW: Real mx-name-* widgets visible after EACH step
+  PW->>LLM: Raw actions + step-by-step live widget snapshot
+  Note over LLM: System prompt enforces:\n- only use widgets seen in the snapshot\n- never invent a name\n- relative page.goto('/') only\n- env vars for credentials, never literals\n- BDD test.step() labels\n- delete/upload/workflow verification rules
+  LLM-->>PW: Enriched .spec.js text
+  PW->>PW: Hardcoded-secret scan
+  PW->>T: Pending review: before/after diff + quality score
+  T->>PW: Approve
+  PW->>App: Test now runs for real, every CI run
+</div>
+
+<p>
+The same "replay first, ask the model to choose only from what's real" pattern is reused,
+unmodified in spirit, for every AI-touched feature in the project: new-test generation,
+locator healing, and the natural-language-to-test-plan generator. None of them ever let the
+model invent a selector from nothing.
+</p>
+</section>
+
+<section id="features">
+<h2>7. Feature Catalog</h2>
+
+<div class="grid2">
+
+<div class="card">
+<h4>Generation &amp; maintenance</h4>
+<ul>
+<li>Record → AI-enrich → validate, one command</li>
+<li>Pending-review queue for every AI change</li>
+<li>Update / Analyze &amp; heal / Extend</li>
+<li>Deterministic quality score per test</li>
+<li>Negative-path coverage heuristic</li>
+<li>BDD <code>test.step()</code> labels, auto-derived <code>.feature</code> docs</li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Diagnostics &amp; intelligence</h4>
+<ul>
+<li>Plain-English AI failure analysis on every failure</li>
+<li>Flaky-test detection from real run history</li>
+<li>Performance trend tracking (avg/P95/latest)</li>
+<li>Regression intelligence (diff last two runs)</li>
+<li>Coverage map (App Scanner vs. what tests reference)</li>
+<li>Test dependency graph</li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Exploration &amp; security</h4>
+<ul>
+<li>Mendix App Scanner — crawl reachable pages/widgets as a role</li>
+<li>Authorization boundary scan — cross-role exposure detection</li>
+<li>Autonomous LLM-driven exploration (bug-finding, not CI)</li>
+<li>Opt-in accessibility scanning (axe-core, WCAG A/AA)</li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Operations &amp; infrastructure</h4>
+<ul>
+<li>Multi-project, multi-role, multi-environment</li>
+<li>Direct database session reset (targeted or global)</li>
+<li>Automatic session clearing before/after every test</li>
+<li>Opt-in cross-browser coverage (Chromium/Firefox/WebKit)</li>
+<li>Opt-in visual regression (screenshot diffing)</li>
+<li>Full CI pipeline: secrets validation, reports, Slack alerts</li>
+</ul>
+</div>
+
+</div>
+
+<p style="margin-top:16px">
+<span class="tag">Multi-project</span>
+<span class="tag">Multi-role</span>
+<span class="tag">Multi-environment</span>
+<span class="tag">Self-healing</span>
+<span class="tag">AI diagnosis</span>
+<span class="tag">Quality scoring</span>
+<span class="tag">Flaky detection</span>
+<span class="tag">Accessibility</span>
+<span class="tag">Visual regression</span>
+<span class="tag">Authz scanning</span>
+<span class="tag">DB-level tooling</span>
+<span class="tag">CI/CD ready</span>
+</p>
+</section>
+
+<section id="usage">
+<h2>8. How To Use It (Brief)</h2>
+
+<ol>
+<li><strong>Setup:</strong> <code>npm install</code>, <code>npx playwright install --with-deps chromium</code>,
+fill in a Groq API key and the app's URL/credentials in <code>.env</code>.</li>
+<li><strong>Open the UI:</strong> <code>npm run ui</code> → <code>http://localhost:4300</code>,
+pick or create a project.</li>
+<li><strong>Record a flow:</strong> Review tab → Record → log in as a role and click through
+the scenario like a real manual test → close the recorder window.</li>
+<li><strong>Review the AI's draft:</strong> a before/after diff with a quality score appears
+in Pending Review → Approve, Reject, or Regenerate.</li>
+<li><strong>Run it:</strong> Runs tab (one role, one file, by tag, or everything) — or let CI
+run it on every push automatically.</li>
+<li><strong>When something breaks:</strong> Fix an existing test → Analyze &amp; heal
+locators (renamed widget), Update (scenario changed), or Extend (scenario grew) — review and
+approve the proposed fix like anything else.</li>
+<li><strong>Keep an eye on health:</strong> Tests tab for quality/flaky trends, Insights tab
+for performance/regression/coverage/authorization.</li>
+</ol>
+
+<div class="callout">
+The CLI equivalent of every UI action is documented in <code>TESTING_GUIDE.md</code> — the
+UI is optional, never the only way to do something.
+</div>
+</section>
+
+<section id="generality">
+<h2>9. Is This Mendix-Only?</h2>
+
+<p>
+Honest answer: <strong>the architecture is general-purpose; the current implementation is
+Mendix-coupled in a specific, identifiable layer.</strong> The two need to be judged
+separately.
+</p>
+
+<h3>What's already generic (reusable for any Playwright-drivable app)</h3>
+<ul>
+<li>The whole record → AI-enrich → human-review → run pipeline and its orchestration.</li>
+<li>Multi-project / multi-role / multi-environment project structure.</li>
+<li>The pending-review queue, quality scoring, flaky detection, AI failure diagnosis.</li>
+<li>The Update / Analyze / Extend self-healing pattern — the mechanism ("replay live, only
+propose from what's real, splice deterministically") is not Mendix-specific at all.</li>
+<li>CI wiring, secret-leak validation, reporting, the whole UI shell.</li>
+</ul>
+
+<h3>What's currently Mendix-specific</h3>
+<table>
+<tr><th>Component</th><th>Why it's Mendix-coupled today</th></tr>
+<tr><td>Locator strategy (<code>BasePage.mx()</code>)</td>
+    <td>Relies on Mendix's own <code>mx-name-&lt;WidgetName&gt;</code> CSS class
+    convention — effectively Mendix's built-in <code>data-testid</code> equivalent</td></tr>
+<tr><td>AI system prompts (<code>enrich.js</code>, <code>heal-scan.js</code>)</td>
+    <td>Written with explicit Mendix knowledge: the <code>mx-name-*</code> convention,
+    <code>waitForMendixIdle()</code>, the <code>/xas/</code> API pattern</td></tr>
+<tr><td>Session/seat-cap handling</td>
+    <td>Specific to how a Mendix trial license enforces concurrent-session limits</td></tr>
+<tr><td>Database-level tooling (session reset, entity-mapping utilities)</td>
+    <td>Hardcoded against Mendix's own internal schema conventions
+    (<code>system$session</code>, <code>system$user</code>, <code>mendixsystem$*</code>)</td></tr>
+</table>
+
+<h3>What it would take to target a different stack</h3>
+<p>
+For a React/Vue/Angular/plain-HTML application with a stable locator convention
+(<code>data-testid</code>, <code>aria-label</code>, or similar), porting this platform
+would mean:
+</p>
+<ol>
+<li>Swap <code>BasePage</code>'s locator helper for whatever stable attribute the target
+framework guarantees.</li>
+<li>Rewrite the AI system prompts to reference that convention instead of
+<code>mx-name-*</code>, and remove Mendix-specific async-wait guidance.</li>
+<li>Drop (or reimplement against the target's own persistence layer) the database-level
+session/authorization tooling — those are inherently platform-specific by nature, not just
+by current implementation.</li>
+</ol>
+
+<div class="callout">
+<strong>Bottom line:</strong> a team adopting this for a non-Mendix application keeps roughly
+the entire orchestration, review, AI-diagnosis, and CI layer as-is, and needs to rebuild only
+the locator-and-prompt adapter layer plus any platform-specific database utilities. It is not
+a Mendix-only tool in principle — it is a Mendix-first implementation of a general pattern.
+</div>
+</section>
+
+<section id="limitations">
+<h2>10. Known Limitations &amp; Constraints</h2>
+<ul>
+<li><strong>Trial license seat cap</strong> (local/dev Mendix instances): concurrent-session
+limits can cause false failures under load; mitigated with serial execution, retries, and
+automatic session clearing, but not eliminated on a genuinely tiny trial cap.</li>
+<li><strong>No access to the Studio Pro project model.</strong> Every feature is grounded in
+what a real browser session (or, for DB tooling, the app's own database) can observe —
+by design, but it means nothing here can reason about microflows/entities it hasn't
+actually seen exercised.</li>
+<li><strong>Self-healing requires a confident match.</strong> A locator with no plausible
+replacement among currently-visible widgets is reported as unresolved, never guessed —
+correct behavior, but it means some fixes still need a human.</li>
+<li><strong>Extend mode is single-scenario only.</strong> A spec with multiple
+<code>test()</code> calls in one <code>describe</code> block isn't a supported target yet.</li>
+<li><strong>Data cleanup is opt-in and manual</strong> where no verified delete flow has
+been recorded — the project deliberately refuses to fabricate a delete step from a guessed
+locator.</li>
+</ul>
+</section>
+
+<section id="conclusion">
+<h2>11. Conclusion</h2>
+<p>
+mendix-test-agent demonstrates that the most expensive part of end-to-end testing — keeping
+tests alive as the application changes — can be substantially automated without sacrificing
+trust, as long as every automated decision stays grounded in something real and every
+AI-authored change passes through a human before it counts. The result is a testing
+practice that costs a single manual pass per flow instead of a manual pass every time
+someone wants to be sure a flow still works.
+</p>
+<p class="footer-note">
+Report generated from the project's own source and documentation
+(<code>README.md</code>, <code>TESTING_GUIDE.md</code>, <code>CLAUDE.md</code>) as of
+2026-09-14.
+</p>
+</section>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose",
+    themeVariables: { primaryColor: "#e6f6f5", primaryBorderColor: "#00a59f", primaryTextColor: "#16302e", lineColor: "#067d78", fontFamily: "Segoe UI, Arial, sans-serif", fontSize: "12px" } });
+</script>
+</body>
+</html>

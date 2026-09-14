@@ -29,9 +29,25 @@ import {
   rejectPending,
   readHistory,
   appendHistory,
+  listAllTests,
+  roleCoverageMatrix,
+  readTestHistory,
+  computeFlaky,
+  listEnvironments,
+  readEnvironmentContent,
+  writeEnvironment,
+  deleteEnvironment,
+  isValidEnvironmentName,
+  testPerformance,
+  regressionIntelligence,
+  coverageMap,
+  testDependencyGraph,
+  defaultEnvTemplate,
   DEFAULT_PROJECT,
 } from "../scripts/project.js";
+import { randomUUID } from "node:crypto";
 import { checkTextForSecrets } from "../scripts/check-secrets.js";
+import { scoreTestQuality } from "../scripts/confidence.js";
 import { startJob, getJob, cancelJob, pruneOldJobs } from "./jobs.js";
 
 // Tags come from the UI as free text (the "By tag" run option), so unlike
@@ -171,6 +187,25 @@ app.get("/api/projects/:name/roles/:role/files/:file/source", (req, res) => {
   });
 });
 
+// Removes a generated test (and its companion .feature, if any) from
+// generated-tests/ — the raw recording and past test-history entries are
+// left alone, same as approving a "fix" never touches those either.
+app.delete("/api/projects/:name/roles/:role/files/:file", (req, res) => {
+  const { name, role, file } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  if (!readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  if (!SPEC_FILE_RE.test(file)) return res.status(400).json({ error: "Invalid file name." });
+
+  const { generatedTests } = projectPaths(name);
+  const specPath = path.join(generatedTests, role, file);
+  if (!fs.existsSync(specPath)) return res.status(404).json({ error: "Spec not found." });
+
+  fs.rmSync(specPath);
+  const featurePath = specPath.replace(/\.spec\.js$/, ".feature");
+  if (fs.existsSync(featurePath)) fs.rmSync(featurePath);
+  res.json({ ok: true });
+});
+
 // ---- Project .env editor ----
 //
 // Raw-text editor, not a structured form: the key set varies per project
@@ -196,10 +231,241 @@ app.post("/api/projects/:name/env", (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Multiple environments (Dev/QA/Staging/... per project) ----
+//
+// A project's own .env is always "Default" and isn't listed here — these
+// routes only manage the additional NAMED environments (environments/<name>.env).
+
+app.get("/api/projects/:name/environments", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json({ environments: listEnvironments(name) });
+});
+
+// Starting content for a brand-new named environment: BASE_URL, the default
+// MENDIX_TEST_USERNAME/PASSWORD pair, and MENDIX_DB_* vars — see
+// scripts/project.js's defaultEnvTemplate() for exactly what and why.
+app.get("/api/projects/:name/env-template", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json({ content: defaultEnvTemplate(name) });
+});
+
+// ---- Mendix session reset (direct DB access) — see scripts/reset-mendix-
+// sessions.js's own header for what this does and doesn't guess about the
+// schema. --yes always passed here since a streamed job has no stdin for
+// the CLI's own interactive confirmation prompt — the UI's confirmAction()
+// modal is what actually gates this before the request is even sent.
+
+app.post("/api/projects/:name/sessions/check", (req, res) => {
+  const { name } = req.params;
+  const { environment } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  const args = ["scripts/reset-mendix-sessions.js", "--project", name];
+  if (environment) args.push("--environment", environment);
+  const jobId = startJob("node", args, { env: process.env });
+  res.json({ jobId });
+});
+
+app.post("/api/projects/:name/sessions/reset", (req, res) => {
+  const { name } = req.params;
+  const { all, role, environment } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  if (!all && !role) return res.status(400).json({ error: "Specify all or a role." });
+  if (all && role) return res.status(400).json({ error: "all and role are mutually exclusive." });
+  if (role && !readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+
+  const args = ["scripts/reset-mendix-sessions.js", "--project", name, "--yes"];
+  if (all) args.push("--all");
+  else args.push("--role", role);
+  if (environment) args.push("--environment", environment);
+  const jobId = startJob("node", args, { env: process.env });
+  res.json({ jobId });
+});
+
+app.get("/api/projects/:name/environments/:env", (req, res) => {
+  const { name, env } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const content = readEnvironmentContent(name, env);
+  if (content === null) return res.status(404).json({ error: "Environment not found." });
+  res.json({ content });
+});
+
+app.post("/api/projects/:name/environments/:env", (req, res) => {
+  const { name, env } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const content = req.body?.content;
+  if (typeof content !== "string") return res.status(400).json({ error: "content must be a string." });
+  try {
+    writeEnvironment(name, env, content);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/api/projects/:name/environments/:env", (req, res) => {
+  const { name, env } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  try {
+    deleteEnvironment(name, env);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get("/api/projects/:name/tags", (req, res) => {
   const { name } = req.params;
   if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
   res.json({ tags: projectTags(name) });
+});
+
+// ---- Test explorer / coverage / per-test history ----
+//
+// All derived from generated-tests/ (what actually exists) plus
+// test-history.json (what test-history-reporter.js recorded from actual
+// runs) — never a separate source of truth that could drift from either.
+
+app.get("/api/projects/:name/tests", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const { generatedTests } = projectPaths(name);
+  const history = readTestHistory(name);
+  const tests = listAllTests(name).map((t) => {
+    const testId = `${t.role}/${t.file}`;
+    const entries = history[testId] || [];
+    const specText = fs.readFileSync(path.join(generatedTests, t.role, t.file), "utf-8");
+    return {
+      ...t,
+      quality: scoreTestQuality(specText),
+      latest: entries[0] || null,
+      runCount: entries.length,
+      ...computeFlaky(entries),
+    };
+  });
+  res.json({ tests });
+});
+
+app.get("/api/projects/:name/coverage", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json(roleCoverageMatrix(name));
+});
+
+// ---- Insights: performance analytics, regression intelligence, coverage map ----
+//
+// All three are pure aggregations over data already collected elsewhere
+// (test-history.json, explorer/app-scan/) — no new measurement pass.
+
+app.get("/api/projects/:name/performance", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json({ performance: testPerformance(name) });
+});
+
+app.get("/api/projects/:name/regression-intelligence", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json(regressionIntelligence(name) ?? { latest: null });
+});
+
+app.get("/api/projects/:name/coverage-map", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json(coverageMap(name));
+});
+
+app.get("/api/projects/:name/dependencies", (req, res) => {
+  const { name } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  res.json(testDependencyGraph(name));
+});
+
+// ---- AI-generated assertion suggestions (review-only, never auto-applied) ----
+
+const FLOW_NAME_RE = /^[a-z0-9-]+$/;
+
+app.post("/api/projects/:name/suggest-assertions", (req, res) => {
+  const { name } = req.params;
+  const { role, flowName } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  if (!role || !readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  if (!flowName || !FLOW_NAME_RE.test(flowName)) return res.status(400).json({ error: "Invalid flow name." });
+
+  const jobId = startJob("node", ["scripts/suggest-assertions.js", role, flowName, "--project", name], {
+    env: process.env,
+  });
+  res.json({ jobId });
+});
+
+app.get("/api/projects/:name/suggest-assertions/:role/:flowName", (req, res) => {
+  const { name, role, flowName } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  if (!FLOW_NAME_RE.test(flowName)) return res.status(400).json({ error: "Invalid flow name." });
+  const { explorer } = projectPaths(name);
+  const filePath = path.join(explorer, "assertion-suggestions", `${role}-${flowName}.json`);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "No suggestions yet for this test." });
+  res.json(JSON.parse(fs.readFileSync(filePath, "utf-8")));
+});
+
+// ---- Natural-language test plan (BDD plan only, never executable code —
+// see scripts/generate-from-description.js's own header for why) ----
+
+const PLAN_ID_RE = /^[a-z0-9-]+$/i;
+
+app.post("/api/projects/:name/generate-plan", (req, res) => {
+  const { name } = req.params;
+  const { role, description } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  if (!role || !readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  if (!description || typeof description !== "string" || !description.trim()) {
+    return res.status(400).json({ error: "Description is required." });
+  }
+
+  const id = `${role}-${randomUUID()}`;
+  // description goes via env var, not a CLI arg — see generate-from-description.js's
+  // header comment: spawn's shell:true word-splits a multi-word array arg on Windows.
+  const jobId = startJob(
+    "node",
+    ["scripts/generate-from-description.js", role, "--project", name, "--id", id],
+    { env: { ...process.env, MENDIX_NL_DESCRIPTION: description } }
+  );
+  res.json({ jobId, id });
+});
+
+app.get("/api/projects/:name/generate-plan/:id", (req, res) => {
+  const { name, id } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  if (!PLAN_ID_RE.test(id)) return res.status(400).json({ error: "Invalid plan id." });
+  const { explorer } = projectPaths(name);
+  const filePath = path.join(explorer, "nl-plans", `${id}.json`);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Plan not found." });
+  res.json(JSON.parse(fs.readFileSync(filePath, "utf-8")));
+});
+
+app.get("/api/projects/:name/roles/:role/files/:file/history", (req, res) => {
+  const { name, role, file } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  if (!SPEC_FILE_RE.test(file)) return res.status(400).json({ error: "Invalid file name." });
+  const history = readTestHistory(name);
+  const entries = history[`${role}/${file}`] || [];
+  const { testHistoryArtifacts } = projectPaths(name);
+  // test-history-reporter.js copies each failure screenshot into
+  // testHistoryArtifacts/ at record time (see its own comment), so entries
+  // written from here on stay valid indefinitely. Older entries recorded
+  // before that change still point into the since-wiped test-results/ and
+  // will correctly resolve to no URL here — that screenshot is genuinely
+  // gone, not recoverable, so hide the link rather than send the client to
+  // a dead artifact (previously surfaced as a raw "Cannot GET ..." page).
+  const toArtifactUrl = (artifactPath) =>
+    artifactPath && fs.existsSync(path.join(testHistoryArtifacts, artifactPath))
+      ? `/artifacts/${encodeURIComponent(name)}/${artifactPath.split("/").map(encodeURIComponent).join("/")}`
+      : null;
+  res.json({
+    entries: entries.map((e) => ({ ...e, artifactUrl: toArtifactUrl(e.artifactPath) })),
+    ...computeFlaky(entries),
+  });
 });
 
 // ---- Run history ----
@@ -213,8 +479,14 @@ app.get("/api/projects/:name/history", (req, res) => {
 // ---- Run tests ----
 
 app.post("/api/run", (req, res) => {
-  const { project, scope, role, file, tag } = req.body || {};
+  const { project, scope, role, file, tag, environment } = req.body || {};
   if (!projectExists(project)) return res.status(400).json({ error: "Unknown project." });
+  if (environment && !isValidEnvironmentName(environment)) {
+    return res.status(400).json({ error: "Invalid environment name." });
+  }
+  if (environment && readEnvironmentContent(project, environment) === null) {
+    return res.status(400).json({ error: `Environment "${environment}" not found.` });
+  }
 
   // Playwright's positional CLI arg is a SUBSTRING pattern matched against
   // test files already discovered under testDir (playwright.config.js
@@ -236,11 +508,12 @@ app.post("/api/run", (req, res) => {
     args.push("--grep", tag);
     label = `tag "${tag}"`;
   }
+  if (environment) label += ` [${environment}]`;
 
   const jobId = startJob("npx", args, {
-    env: { ...process.env, MENDIX_PROJECT: project },
+    env: { ...process.env, MENDIX_PROJECT: project, ...(environment ? { MENDIX_ENV: environment } : {}) },
   });
-  recordHistoryOnFinish(jobId, { type: "run", project, scope, role, file, tag, label });
+  recordHistoryOnFinish(jobId, { type: "run", project, scope, role, file, tag, environment: environment || "Default", label });
   res.json({ jobId, label });
 });
 
@@ -252,19 +525,19 @@ app.post("/api/run", (req, res) => {
 // becomes a real test once approved.
 
 app.post("/api/record", (req, res) => {
-  const { project, role, flowName } = req.body || {};
+  const { project, role, flowName, update, extend } = req.body || {};
   if (!projectExists(project)) return res.status(400).json({ error: "Unknown project." });
   if (!role || !readProjectRoles(project).includes(role)) return res.status(400).json({ error: "Unknown role." });
   if (!flowName || !/^[a-z0-9-]+$/.test(flowName)) {
     return res.status(400).json({ error: "Flow name must be lowercase letters, digits, and hyphens only." });
   }
+  if (update && extend) return res.status(400).json({ error: "update and extend are mutually exclusive." });
 
-  const jobId = startJob(
-    "node",
-    ["scripts/record-and-enrich.js", role, flowName, "--project", project, "--stage"],
-    { env: process.env }
-  );
-  recordHistoryOnFinish(jobId, { type: "record", project, role, label: `${role}/${flowName}` });
+  const args = ["scripts/record-and-enrich.js", role, flowName, "--project", project, "--stage"];
+  if (update) args.push("--update");
+  if (extend) args.push("--extend");
+  const jobId = startJob("node", args, { env: process.env });
+  recordHistoryOnFinish(jobId, { type: extend ? "extend" : update ? "update" : "record", project, role, label: `${role}/${flowName}` });
   res.json({ jobId });
 });
 
@@ -290,6 +563,24 @@ app.post("/api/projects/:name/heal", (req, res) => {
   }
 
   const jobId = startJob("node", ["scripts/heal.js", role, flowName, oldWidget, "--project", name], {
+    env: process.env,
+  });
+  res.json({ jobId });
+});
+
+// ---- Self-heal, SCAN mode — finds every broken locator automatically,
+// instead of requiring the widget name that's failing (see scripts/heal-scan.js) ----
+
+app.post("/api/projects/:name/heal-scan", (req, res) => {
+  const { name } = req.params;
+  const { role, flowName } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  if (!role || !readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  if (!flowName || !/^[a-z0-9-]+$/.test(flowName)) {
+    return res.status(400).json({ error: "Flow name must be lowercase letters, digits, and hyphens only." });
+  }
+
+  const jobId = startJob("node", ["scripts/heal-scan.js", role, flowName, "--project", name], {
     env: process.env,
   });
   res.json({ jobId });
@@ -353,8 +644,8 @@ app.post("/api/projects/:name/pending/:id/regenerate", (req, res) => {
   if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
   const item = readPending(name, id);
   if (!item) return res.status(404).json({ error: "Pending item not found." });
-  if (item.meta.type !== "new-test") {
-    return res.status(400).json({ error: "Only a new-test proposal can be regenerated." });
+  if (item.meta.type !== "new-test" && item.meta.type !== "update") {
+    return res.status(400).json({ error: "Only a new-test or update proposal can be regenerated." });
   }
 
   const { role, flowName } = item.meta;
@@ -381,7 +672,88 @@ app.post("/api/projects/:name/pending/:id/regenerate", (req, res) => {
     ["explorer/enrich.js", rawPath, baseUrl, outPath, "--role", role, "--project", name],
     { env: process.env }
   );
+  // enrich.js doesn't know about the quality score or meta.json (it's a
+  // generic replay+rewrite tool, reused as-is by heal.js too) — recompute
+  // and persist it here once the job actually wrote a new spec.js, so the
+  // pending-review UI isn't showing a score for content that's since changed.
+  const job = getJob(jobId);
+  if (job) {
+    const listener = (text) => {
+      if (text !== null) return;
+      job.listeners.delete(listener);
+      if (job.exitCode !== 0 || !fs.existsSync(outPath)) return;
+      const metaPath = path.join(explorer, "pending", id, "meta.json");
+      if (!fs.existsSync(metaPath)) return;
+      const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+      meta.quality = scoreTestQuality(fs.readFileSync(outPath, "utf-8"));
+      fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+    };
+    job.listeners.add(listener);
+  }
   res.json({ jobId });
+});
+
+// ---- Mendix App Scanner ----
+//
+// A best-effort, single-login exploration of what's actually reachable by
+// clicking things while logged in as a given role — see scripts/scan-app.js's
+// own header comment for exactly what it does and doesn't do.
+
+app.post("/api/projects/:name/scan", (req, res) => {
+  const { name } = req.params;
+  const { role, maxPages } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  if (!role || !readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  const pages = Number(maxPages) || 15;
+  if (!Number.isInteger(pages) || pages < 1 || pages > 50) {
+    return res.status(400).json({ error: "max-pages must be an integer between 1 and 50." });
+  }
+
+  const jobId = startJob(
+    "node",
+    ["scripts/scan-app.js", role, "--project", name, "--max-pages", String(pages)],
+    { env: process.env }
+  );
+  res.json({ jobId });
+});
+
+app.get("/api/projects/:name/scan/:role", (req, res) => {
+  const { name, role } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  if (!readProjectRoles(name).includes(role)) return res.status(400).json({ error: "Unknown role." });
+  const { explorer } = projectPaths(name);
+  const scanPath = path.join(explorer, "app-scan", `${role}.json`);
+  if (!fs.existsSync(scanPath)) return res.status(404).json({ error: "No scan yet for this role." });
+  res.json(JSON.parse(fs.readFileSync(scanPath, "utf-8")));
+});
+
+// ---- Authorization boundary scan (see scripts/auth-boundary-scan.js header
+// for why this compares widget visibility rather than probing URLs directly) ----
+
+app.post("/api/projects/:name/auth-boundary-scan", (req, res) => {
+  const { name } = req.params;
+  const { lowerRole, higherRole } = req.body || {};
+  if (!projectExists(name)) return res.status(400).json({ error: "Unknown project." });
+  const projectRoles = readProjectRoles(name);
+  if (!lowerRole || !projectRoles.includes(lowerRole)) return res.status(400).json({ error: "Unknown lower-privilege role." });
+  if (!higherRole || !projectRoles.includes(higherRole)) return res.status(400).json({ error: "Unknown higher-privilege role." });
+  if (lowerRole === higherRole) return res.status(400).json({ error: "Pick two different roles." });
+
+  const jobId = startJob(
+    "node",
+    ["scripts/auth-boundary-scan.js", lowerRole, higherRole, "--project", name],
+    { env: process.env }
+  );
+  res.json({ jobId });
+});
+
+app.get("/api/projects/:name/auth-boundary-scan/:lowerRole/:higherRole", (req, res) => {
+  const { name, lowerRole, higherRole } = req.params;
+  if (!projectExists(name)) return res.status(404).json({ error: "Project not found." });
+  const { explorer } = projectPaths(name);
+  const resultPath = path.join(explorer, "auth-boundary-scan", `${lowerRole}-vs-${higherRole}.json`);
+  if (!fs.existsSync(resultPath)) return res.status(404).json({ error: "No scan yet for this role pair." });
+  res.json(JSON.parse(fs.readFileSync(resultPath, "utf-8")));
 });
 
 // ---- Cancel a running job ----
@@ -430,9 +802,24 @@ app.use("/report/:project", (req, res, next) => {
   express.static(playwrightReport)(req, res, next);
 });
 
-// ---- Fallback: single-page app, all non-API routes serve index.html ----
+// ---- Failure artifacts (screenshots test-history-reporter.js recorded) ----
 
-app.get(/^(?!\/api|\/report).*/, (req, res) => {
+app.use("/artifacts/:project", (req, res, next) => {
+  const { testHistoryArtifacts } = projectPaths(req.params.project);
+  express.static(testHistoryArtifacts)(req, res, next);
+});
+
+// ---- Fallback: single-page app, all non-API routes serve index.html ----
+//
+// Must exclude /artifacts and /report too, not just /api — otherwise a
+// missing screenshot or report file falls through express.static's next()
+// into this catch-all, which returns index.html with a 200 instead of a
+// real 404. The browser then renders that HTML at the deep /artifacts/...
+// URL, where index.html's relative asset links (style.css, app.js) 404 in
+// turn, producing an unstyled page with no JS ever running (verified
+// 2026-09-10: this is exactly what a stale/missing test-failed-N.png
+// screenshot link produced).
+app.get(/^(?!\/api|\/report|\/artifacts).*/, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
