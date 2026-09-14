@@ -26,7 +26,7 @@
   "bin": {},
   "dependencies": {
     "dotenv": "^16.1.4",
-    "express": "^4.21.0",
+    "express": "^5.2.1",
     "openai": "^4.68.0",
     "pg": "^8.23.0"
   },
