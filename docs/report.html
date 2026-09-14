@@ -80,8 +80,16 @@
   th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
   th { background: var(--teal-pale); color: var(--ink); font-weight: 700; }
   tr:nth-child(even) td { background: #fafdfd; }
-  .mermaid { text-align: center; margin: 14px 0; }
+  .mermaid { text-align: center; margin: 14px 0; page-break-inside: avoid; }
   .mermaid svg { max-width: 100% !important; height: auto !important; }
+  .small-diagram svg { max-width: 92% !important; }
+  .figure-caption {
+    text-align: center; font-size: 8.8pt; color: var(--muted); margin: -4px 0 14px;
+  }
+  .shot {
+    display: block; max-width: 100%; margin: 6px 0 16px; border: 1px solid var(--border);
+    border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); page-break-inside: avoid;
+  }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .card {
     border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px;
@@ -323,24 +331,24 @@ This is the primary path from "someone tested a flow by hand" to "this is a perm
 self-maintaining automated test."
 </p>
 
-<div class="mermaid">
-flowchart TD
-  Start([Tester wants to cover a new flow]) --> Record[Record: Playwright codegen\nopens a real browser\ntester logs in and clicks through manually]
-  Record --> Raw[Raw, unpolished recording\ndumb clicks/fills, no assertions]
-  Raw --> Snapshot[Replay the recording once more,\nstep by step, capturing every real\nmx-name-* widget visible at each step]
-  Snapshot --> Enrich{Send recording + live\nwidget snapshot to the AI}
-  Enrich --> Draft[AI drafts a maintainable test:\nstable locators, real assertions,\nMendix-aware waits, BDD step labels]
-  Draft --> SecretCheck{Hardcoded secret\ncheck}
-  SecretCheck -->|fails| Reject[Refused - never written,\nstays in the recording only]
-  SecretCheck -->|clean| Pending[Pending review queue:\nbefore/after diff + quality score]
-  Pending --> Human{Human reviews}
-  Human -->|Reject| Discard[Discarded - raw recording\nkept for a retry]
+<div class="mermaid small-diagram">
+flowchart LR
+  Start([New flow\nto cover]) --> Record[Record: codegen\nmanual click-through]
+  Record --> Replay[Replay + snapshot\nevery real widget seen]
+  Replay --> Enrich{AI enrich:\nlocators, assertions,\nwaits, BDD labels}
+  Enrich --> Check{Secret\ncheck}
+  Check -->|fails| Refused[Refused -\nnever written]
+  Check -->|clean| Pending[Pending review:\nbefore/after diff\n+ quality score]
+  Pending --> Human{Human\ndecides}
+  Human -->|Reject| Discard[Discarded]
   Human -->|Regenerate| Enrich
-  Human -->|Approve| Live[Written to generated-tests/\n+ derived .feature doc]
-  Live --> CI[Runs on every push/PR/nightly\nvia GitHub Actions]
-  CI --> Report[HTML report + JUnit +\nAI failure diagnosis on any failure]
-  Report --> Monitor[Tests tab: quality score,\nflaky detection, pass/fail history]
+  Human -->|Approve| Live[generated-tests/\n+ .feature doc]
+  Live --> CI[CI: every\npush/PR/nightly]
+  CI --> Report[Report +\nAI diagnosis]
 </div>
+<p class="figure-caption">Once approved, a test's ongoing health (quality score, flaky detection,
+pass/fail history) is tracked automatically on the Tests tab — see the screenshot in
+<a href="#tour">Section 6</a>.</p>
 
 <h3>Self-healing sub-workflow: Update / Analyze / Extend</h3>
 <p>
@@ -378,8 +386,54 @@ file that already worked.
 </div>
 </section>
 
+<section id="tour">
+<h2>6. Platform Tour</h2>
+<p>
+The diagrams above show the mechanism; this is what it actually looks like. Every screenshot
+below is a real capture of the running UI against a live project, not a mockup.
+</p>
+
+<h3>Test Explorer</h3>
+<p>
+Every generated test with its AI quality score, negative-path coverage, latest result, and
+flaky-test flag — <strong>Run</strong>, <strong>Source</strong>, <strong>History</strong>,
+<strong>Edit</strong>, and <strong>Delete</strong> per row.
+</p>
+<img class="shot" src="screenshots/02-tests-tab.png" alt="Test Explorer tab" />
+
+<h3>Fixing an existing test</h3>
+<p>
+The Update / Analyze &amp; heal locators / Extend card, side by side with recording a
+brand-new test — every AI-touched action lands in the same pending-review queue above it.
+</p>
+<img class="shot" src="screenshots/03-review-tab.png" alt="Review tab: record and fix cards" />
+
+<h3>Insights</h3>
+<p>
+Real per-test performance history (average / P95 / latest, flagging a test that's running
+meaningfully slower than its own baseline) and regression intelligence comparing the two
+most recent full runs.
+</p>
+<img class="shot" src="screenshots/04-insights-tab.png" alt="Insights tab: performance and regression intelligence" />
+
+<h3>Coverage matrix</h3>
+<p>
+Flow × role at a glance — which roles actually have a test for a given flow, built directly
+from what's on disk.
+</p>
+<img class="shot" src="screenshots/07-coverage-tab.png" alt="Coverage tab: role coverage matrix" />
+
+<h3>Settings: collapsible cards + direct database tooling</h3>
+<p>
+Environments and Mendix sessions collapse to a single header line each so they don't dominate
+the page — expanded here to show the database-backed session check/clear controls built
+during this project.
+</p>
+<img class="shot" src="screenshots/06-settings-sessions.png" alt="Settings tab: Mendix sessions panel" />
+</section>
+
 <section id="ai-flow">
-<h2>6. How the AI Generation Actually Works</h2>
+<h2>7. How the AI Generation Actually Works</h2>
 
 <div class="mermaid">
 sequenceDiagram
@@ -411,7 +465,7 @@ model invent a selector from nothing.
 </section>
 
 <section id="features">
-<h2>7. Feature Catalog</h2>
+<h2>8. Feature Catalog</h2>
 
 <div class="grid2">
 
@@ -480,7 +534,7 @@ model invent a selector from nothing.
 </section>
 
 <section id="usage">
-<h2>8. How To Use It (Brief)</h2>
+<h2>9. How To Use It (Brief)</h2>
 
 <ol>
 <li><strong>Setup:</strong> <code>npm install</code>, <code>npx playwright install --with-deps chromium</code>,
@@ -507,7 +561,7 @@ UI is optional, never the only way to do something.
 </section>
 
 <section id="generality">
-<h2>9. Is This Mendix-Only?</h2>
+<h2>10. Is This Mendix-Only?</h2>
 
 <p>
 Honest answer: <strong>the architecture is general-purpose; the current implementation is
@@ -566,7 +620,7 @@ a Mendix-only tool in principle — it is a Mendix-first implementation of a gen
 </section>
 
 <section id="limitations">
-<h2>10. Known Limitations &amp; Constraints</h2>
+<h2>11. Known Limitations &amp; Constraints</h2>
 <ul>
 <li><strong>Trial license seat cap</strong> (local/dev Mendix instances): concurrent-session
 limits can cause false failures under load; mitigated with serial execution, retries, and
@@ -587,7 +641,7 @@ locator.</li>
 </section>
 
 <section id="conclusion">
-<h2>11. Conclusion</h2>
+<h2>12. Conclusion</h2>
 <p>
 mendix-test-agent demonstrates that the most expensive part of end-to-end testing — keeping
 tests alive as the application changes — can be substantially automated without sacrificing
