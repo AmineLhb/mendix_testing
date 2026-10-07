@@ -28,7 +28,7 @@
     "dotenv": "^16.1.4",
     "express": "^4.21.0",
     "openai": "^4.68.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
